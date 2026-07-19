@@ -1,0 +1,45 @@
+auditor_regime:
+  enabled: true
+  required: true
+  case_table: cfs_shifting_proxy_common_primary_core_cases
+  source_preference: [auditor_input, panel_input, raw_input]
+  auditor_name_column_candidates:
+    - auditor_name
+    - audit_firm
+    - auditing_firm
+    - auditing_company
+    - audit_company
+    - auditor_firm_name
+    - auditing_company_name
+    - company_audit_name
+    - ten_cong_ty_kiem_toan
+    - ten_don_vi_kiem_toan
+    - cong_ty_kiem_toan
+  ticker_column_candidates: [issuer_ticker, ticker, stock_code, symbol, ma_ck, ma_chung_khoan]
+  year_column_candidates: [fiscal_year, report_year, year, nam]
+  audit_status_column_candidates: [audit_status, report_audit_status, is_audited, audited]
+  scope_column_candidates: [scope, report_scope, statement_scope]
+  proxy_model: earnings_working_capital
+  sample_mode: common_primary_models
+  sample_restriction: analysis_core
+  outcomes:
+    - any_candidate
+    - audited_cfo_decrease
+    - audited_cfo_increase
+    - cff_down_candidate
+    - cfi_up_candidate
+  reported_groups: [BIG4, NON_BIG4, UNKNOWN, AMBIGUOUS]
+  minimum_known_coverage: 0.80
+  minimum_group_rows: 100
+  bootstrap_repetitions: 500
+  bootstrap_seed: 240719
+  minimum_interaction_rows: 300
+  minimum_interaction_positives: 20
+  interaction_ridge: 1.0e-6
+  interaction_max_iter: 100
+  interaction_tolerance: 1.0e-8
+  continuous_controls: [log_lag_assets, pre_cfo_scaled]
+  fixed_effects: [fiscal_year, raw_exchange, industry_name]
+  balance_continuous: [log_lag_assets, pre_cfo_scaled, abnormal_cfo_proxy]
+  balance_categorical: [raw_exchange, industry_name, fiscal_year]
+  chunksize: 250000
