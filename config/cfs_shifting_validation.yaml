@@ -1,6 +1,7 @@
 paths:
   raw_input: data/raw/financial_statement_full_long.csv.gz
   panel_input: data/processed/accrual_panel.csv.gz
+  industry_input: source/bctc_industry_icb.csv
   output_dir: artifacts/next_diagnostics
 
 upstream:
@@ -26,12 +27,58 @@ cfs_shifting_validation:
   fold_winsor_upper: 0.99
   incremental_reference_model: raw_cfo_level
 
+  industry_mapping:
+    required: true
+    financial_industry_regex: 'financial|bank|insurance|securit|tai chinh|ngan hang|bao hiem|chung khoan'
+    financial_icb_prefixes: ['8']
+    industry_name_candidates:
+      - icb_industry_name
+      - icb_level_1_name
+      - icb1_name
+      - icb_industry
+      - industry_name
+      - industry
+      - sector_name
+      - sector
+      - nganh_cap_1
+      - ten_nganh_icb
+      - ten_nganh
+    icb_code_candidates:
+      - icb_industry_code
+      - icb_level_1_code
+      - icb1_code
+      - icb_code
+      - industry_code
+      - sector_code
+      - ma_nganh_icb
+      - ma_nganh_cap_1
+
   proxy_models:
     sales_level_only: [inv_assets, pre_revenue_scaled]
     roychowdhury_sales: [inv_assets, pre_revenue_scaled, pre_drev_scaled]
     earnings_conditioned: [inv_assets, pre_revenue_scaled, pre_drev_scaled, pre_pat_scaled]
     earnings_working_capital: [inv_assets, pre_pat_scaled, pre_drev_scaled, pre_drec_scaled, pre_loss]
 
+  # Primary comparison excludes firm-history because its first observation per issuer is unavailable.
+  common_primary_models:
+    - sales_level_only
+    - roychowdhury_sales
+    - earnings_conditioned
+    - earnings_working_capital
+    - raw_cfo_level
+    - within_year_cfo_percentile
+
+  # All-model comparison quantifies the sample cost of requiring firm-history deviation.
+  common_all_models:
+    - sales_level_only
+    - roychowdhury_sales
+    - earnings_conditioned
+    - earnings_working_capital
+    - raw_cfo_level
+    - within_year_cfo_percentile
+    - firm_history_deviation
+
+  # Backward-compatible alias used only by older scripts.
   common_sample_models:
     - sales_level_only
     - roychowdhury_sales
@@ -118,32 +165,46 @@ cfs_shifting_validation:
       include: ['(tien[_ ]thu|thu[_ ]tien).*(thu[_ ]hoi.*gop[_ ]von|thu[_ ]hoi.*dau[_ ]tu.*don[_ ]vi[_ ]khac|ban.*khoan[_ ]dau[_ ]tu|thanh[_ ]ly.*cong[_ ]ty[_ ]con)']
     - concept: cfi_interest_received
       section: investing
-      include: ['(tien[_ ]thu|thu[_ ]tien).*lai[_ ]cho[_ ]vay']
+      include:
+        - '(tien[_ ]thu|thu[_ ]tien).*lai[_ ]cho[_ ]vay'
+        - 'tien[_ ]lai[_ ]da[_ ]nhan'
+        - '(^|[_ ])thu[_ ]lai($|[_ ])'
       exclude: ['co[_ ]tuc|loi[_ ]nhuan']
     - concept: cfi_dividends_received
       section: investing
-      include: ['(tien[_ ]thu|thu[_ ]tien).*(co[_ ]tuc|loi[_ ]nhuan.*duoc[_ ]chia)']
-      exclude: ['lai[_ ]cho[_ ]vay']
+      include:
+        - '(tien[_ ]thu|thu[_ ]tien).*(co[_ ]tuc|loi[_ ]nhuan.*duoc[_ ]chia)'
+        - '(co[_ ]tuc|loi[_ ]nhuan.*duoc[_ ]chia).*(da[_ ]nhan|nhan)'
+      exclude: ['lai[_ ]cho[_ ]vay|thu[_ ]lai']
     - concept: cfi_interest_dividends_received
       section: investing
-      include: ['(tien[_ ]thu|thu[_ ]tien).*lai[_ ]cho[_ ]vay.*(co[_ ]tuc|loi[_ ]nhuan)|(tien[_ ]thu|thu[_ ]tien).*(co[_ ]tuc|loi[_ ]nhuan).*lai[_ ]cho[_ ]vay']
+      include:
+        - 'thu[_ ]lai.*co[_ ]tuc'
+        - 'lai.*(co[_ ]tuc|loi[_ ]nhuan.*duoc[_ ]chia)'
+        - '(co[_ ]tuc|loi[_ ]nhuan).*lai'
 
     - concept: cff_borrowing_proceeds
       section: financing
       include: ['(tien[_ ]thu|thu[_ ]tien).*(di[_ ]vay|phat[_ ]hanh.*trai[_ ]phieu)']
     - concept: cff_debt_repayments
       section: financing
-      include: ['(tien[_ ]chi|chi[_ ]tien|thanh[_ ]toan).*(tra[_ ]no[_ ]goc[_ ]vay|tra[_ ]no.*vay|mua[_ ]lai.*trai[_ ]phieu)']
-      exclude: ['thue[_ ]tai[_ ]chinh']
+      include:
+        - '(tien[_ ]chi|chi[_ ]tien|tien[_ ]tra|tien[_ ]thanh[_ ]toan|thanh[_ ]toan).*(tra[_ ]no[_ ]goc[_ ]vay|tra[_ ]goc[_ ]vay|tra[_ ]no.*vay|hoan[_ ]tra.*vay|mua[_ ]lai.*trai[_ ]phieu)'
+        - '(^|[_ ])tra[_ ]no[_ ]goc[_ ]vay($|[_ ])'
+      exclude: ['thue[_ ]tai[_ ]chinh|di[_ ]thue']
     - concept: cff_lease_principal_payments
       section: financing
-      include: ['(tien[_ ]chi|chi[_ ]tien|thanh[_ ]toan).*(no[_ ]goc.*thue[_ ]tai[_ ]chinh|tra[_ ]no.*thue[_ ]tai[_ ]chinh|goc[_ ]thue[_ ]tai[_ ]chinh)']
+      include:
+        - '(tien[_ ]chi|chi[_ ]tien|tien[_ ]tra|tien[_ ]thanh[_ ]toan|thanh[_ ]toan).*(von[_ ]goc.*di[_ ]thue[_ ]tai[_ ]chinh|no[_ ]goc.*thue[_ ]tai[_ ]chinh|tra[_ ]no.*thue[_ ]tai[_ ]chinh|goc[_ ]thue[_ ]tai[_ ]chinh)'
+        - 'tien[_ ]thanh[_ ]toan[_ ]von[_ ]goc[_ ]di[_ ]thue[_ ]tai[_ ]chinh'
     - concept: cff_owner_contributions
       section: financing
       include: ['(tien[_ ]thu|thu[_ ]tien).*(phat[_ ]hanh.*co[_ ]phieu|nhan[_ ]von[_ ]gop|von[_ ]gop.*chu[_ ]so[_ ]huu)']
     - concept: cff_share_repurchases
       section: financing
-      include: ['(tien[_ ]chi|chi[_ ]tien).*(mua[_ ]lai.*co[_ ]phieu|tra[_ ]lai[_ ]von[_ ]gop|mua[_ ]lai.*von[_ ]gop)']
+      include:
+        - '(tien[_ ]chi|chi[_ ]tien|tien[_ ]tra).*(mua[_ ]lai.*co[_ ]phieu|tra[_ ]lai[_ ]von[_ ]gop|mua[_ ]lai.*von[_ ]gop)'
+        - 'tien[_ ]tra[_ ]lai[_ ]von[_ ]gop.*mua[_ ]lai[_ ]co[_ ]phieu'
     - concept: cff_dividends_paid
       section: financing
       include: ['(tien[_ ]chi|chi[_ ]tien).*(co[_ ]tuc|loi[_ ]nhuan.*da[_ ]chia)|(co[_ ]tuc|loi[_ ]nhuan).*(da[_ ]tra|chi[_ ]tra)']
