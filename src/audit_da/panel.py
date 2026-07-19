@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from collections import Counter, defaultdict
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 import pandas as pd
 
-from .io import read_long_chunks, write_json
+from .io import read_long_chunks
 
 KEYS = ["issuer_ticker", "raw_exchange", "fiscal_year", "audit_status", "scope"]
 
@@ -84,11 +84,10 @@ def extract_wide_panel(path: str | Path, config: dict[str, Any]) -> pd.DataFrame
         raise ValueError("No configured financial-statement items were found in the input data")
     long = pd.concat(frames, ignore_index=True)
     duplicate_counts = long.groupby(KEYS + ["variable"], observed=True).size()
-    bad = duplicate_counts[duplicate_counts > 1]
-    if not bad.empty:
+    if (duplicate_counts > 1).any():
         long = long.groupby(KEYS + ["variable"], as_index=False, observed=True)["value_numeric"].median()
     wide = long.pivot(index=KEYS, columns="variable", values="value_numeric").reset_index()
-    wide.columns.name = None
+    wide.colums.name = None
     return wide
 
 
@@ -113,7 +112,7 @@ def build_accrual_features(wide: pd.DataFrame, config: dict[str, Any]) -> pd.Dat
         "assets", "revenue", "receivables", "current_assets", "cash",
         "current_liabilities", "short_term_debt", "tax_payable",
     ]
-    lag = audited[["issuer_ticker", "fiscal_year"] + [c for c in lag_columns if c in audited]].copy()
+    lag = audited[[issuer_ticker", "fiscal_year"] + [c for c in lag_columns if c in audited]].copy()
     lag["fiscal_year"] += 1
     lag = lag.rename(columns={c: f"lag_{c}_audited" for c in lag_columns if c in lag})
     frame = frame.merge(lag, on=["issuer_ticker", "fiscal_year"], how="left", validate="many_to_one")
@@ -133,12 +132,20 @@ def build_accrual_features(wide: pd.DataFrame, config: dict[str, Any]) -> pd.Dat
     frame["ta_balance_sheet"] = (dca - dcash) - (dcl - dstd - dtax) - depreciation
 
     primary = config["panel"].get("primary_total_accruals", "cash_flow")
+    cash_available = frame["ta_cashflow"].notna()
+    balance_available = frame["ta_balance_sheet"].notna()
     if primary == "cash_flow":
-        frame["total_accruals"] = frame["ta_cashflow"].fillna(frame["ta_balance_sheet"])
-        frame["ta_source"] = np.where(frame["ta_cashflow"].notna(), "cash_flow", "balance_sheet")
+        frame["total_acruals"] = frame["ta_cashflow"].where(cash_available, frame["ta_balance_sheet"])
+        frame["ta_source"] = np.select(
+            [cash_available, (~cash_available) & balance_available],
+            ["cash_flow", "balance_sheet"], default="missing",
+        )
     else:
-        frame["total_accruals"] = frame["ta_balance_sheet"].fillna(frame["ta_cashflow"])
-        frame["ta_source"] = np.where(frame["ta_balance_sheet"].notna(), "balance_sheet", "cash_flow")
+        frame["total_accruals"] = frame["ta_balance_sheet"].where(balance_available, frame["ta_cashflow"])
+        frame["ta_source"] = np.select(
+            [balance_available, (~balance_available) & cash_available],
+            ["balance_sheet", "cash_flow"], default="missing",
+        )
 
     frame["drev"] = pd.to_numeric(frame.get("revenue"), errors="coerce") - pd.to_numeric(frame.get("lag_revenue_audited"), errors="coerce")
     frame["drec"] = pd.to_numeric(frame.get("receivables"), errors="coerce") - pd.to_numeric(frame.get("lag_receivables_audited"), errors="coerce")

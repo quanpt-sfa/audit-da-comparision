@@ -17,6 +17,7 @@ def main() -> None:
         baseline, panel, settings["models"], settings["common_benchmarks"], settings["strata_columns"],
         int(settings["minimum_stratum_size"]), int(settings["permutations"]), float(settings["trim_fraction"]),
         int(settings["random_seed"]), float(settings["identity_tolerance"]),
+        conditioning_bins=settings.get("conditioning_bins", {}),
     )
     write_tables({"directional_placebo_summary": summary, "directional_placebo_draws": draws}, resolve(config_path, config["paths"]["output_dir"]))
 

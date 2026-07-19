@@ -32,9 +32,9 @@ def run_ols_baselines(panel: pd.DataFrame, config: dict[str, Any]) -> pd.DataFra
         for model_name, features in specs.items():
             needed = ["ta_scaled"] + list(features)
             training = train.replace([np.inf, -np.inf], np.nan).dropna(subset=needed)
-            valid = pre[features].replace([np.inf, -np.inf], np.nan).notna().all(axis=1)
-            valid &= post[features].replace([np.inf, -np.inf], np.nan).notna().all(axis=1)
-            pre_v = pre.loc[valid].reset_index(drop=True)
+            valid = pre[needed].replace([np.inf, -np.inf], np.nan).notna().all(axis=1)
+            valid &= post[need].replace([np.inf, -np.inf], np.nan).notna().all(axis=1)
+            pre_v= pre.loc[valid].reset_index(drop=True)
             post_v = post.loc[valid].reset_index(drop=True)
             if len(training) < config["models"]["minimum_train_rows"] or pre_v.empty:
                 continue
@@ -42,32 +42,25 @@ def run_ols_baselines(panel: pd.DataFrame, config: dict[str, Any]) -> pd.DataFra
             model = LinearRegression().fit(scaler.transform(training[features]), training["ta_scaled"])
             for benchmark in signal["benchmarks"]:
                 if benchmark == "version_specific":
-                    x_pre = pre_v[features]
-                    x_post = post_v[features]
+                    x_pre = pre_v[features]; x_post = post_v[features]
                 elif benchmark == "pre_reference":
-                    x_pre = pre_v[features]
-                    x_post = pre_v[features]
+                    x_pre = pre_v[features]; x_post = pre_v[features]
                 elif benchmark == "audited_reference":
-                    x_pre = post_v[features]
-                    x_post = post_v[features]
+                    x_pre = post_v[features]; x_post = post_v[features]
                 else:
                     raise ValueError(benchmark)
                 nda_pre = model.predict(scaler.transform(x_pre))
                 nda_post = model.predict(scaler.transform(x_post))
                 da_pre = pre_v["ta_scaled"].to_numpy() - nda_pre
                 da_post = post_v["ta_scaled"].to_numpy() - nda_post
-                out = pd.DataFrame({
-                    "issuer_ticker": pre_v["issuer_ticker"],
-                    "fiscal_year": year,
-                    "model": model_name,
-                    "benchmark": benchmark,
-                    "da_pre": da_pre,
-                    "da_post": da_post,
+                rows.append(pd.DataFrame({
+                    "issuer_ticker": pre_v["issuer_ticker"], "fiscal_year": year,
+                    "model": model_name, "benchmark": benchmark,
+                    "da_pre": da_pre, "da_post": da_post,
                     "signed_shift": da_post - da_pre,
                     "reduction": np.abs(da_pre) - np.abs(da_post),
                     "raw_ta_shift": post_v["ta_scaled"].to_numpy() - pre_v["ta_scaled"].to_numpy(),
-                })
-                rows.append(out)
+                }))
     if not rows:
         raise ValueError("No OLS baseline folds were produced")
     return pd.concat(rows, ignore_index=True)
