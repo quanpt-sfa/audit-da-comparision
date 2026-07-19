@@ -57,6 +57,7 @@ def main() -> None:
         "14_analyze_cfo_tilt.py",
         "13_analyze_component_placebos.py",
         "15_analyze_cfs_deep_dive.py",
+        "17_analyze_cfs_uncertainty_bridge.py",
         "16_write_cfs_deep_dive_report.py",
         "06_analyze_sign_transitions.py",
         "07_run_directional_placebos.py",
