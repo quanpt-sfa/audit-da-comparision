@@ -39,6 +39,16 @@ def main() -> None:
     reconciliation = maybe_read(output, "cfs_line_item_reconciliation_summary")
     top = maybe_read(output, "cfs_line_item_top_contributors")
 
+    settings = config["cfs_shifting_validation"]
+    restriction_settings = settings.get("sample_restrictions", {})
+    scale_scope_waived = not restriction_settings.get(
+        "require_scale_scope_screening", True
+    )
+    scale_scope_reason = restriction_settings.get(
+        "scale_scope_waiver_reason",
+        "Scale/scope screening waived by design.",
+    )
+
     lines = [
         "# Observed CFS Shifting Validation Report",
         "",
@@ -49,9 +59,20 @@ def main() -> None:
         "- `common_primary_models` excludes firm-history deviation; `common_all_models` includes it and quantifies the sample cost of requiring issuer history.",
         "- Industry exclusions use the external ICB file. Unmatched tickers are not silently classified as non-financial.",
         "- Detailed line-item contributor tables contain reclassification candidates only; the all-resolution table is a separate audit output.",
-        "- Detailed institutional conclusions remain provisional until high-coverage unmapped items and selected source documents are checked.",
+        "- Preliminary and audited records are drawn from the same controlled source, use the same monetary unit, consolidated scope, and reporting-period convention; scale/scope comparability is documented rather than separately screened.",
+        "- Detailed institutional conclusions remain provisional until selected source documents are checked.",
         "",
     ]
+
+    if scale_scope_waived:
+        lines += [
+            "## Scale/scope design note",
+            "",
+            f"- Status: `WAIVED_BY_DESIGN`.",
+            f"- Rationale: {scale_scope_reason}",
+            "- No observations are removed by an additional scale/scope filter.",
+            "",
+        ]
 
     if not industry_status.empty:
         lines += [
@@ -79,10 +100,20 @@ def main() -> None:
         ]
 
     if not coverage.empty:
-        lines += ["## Selected CFS method coverage", "", coverage.to_markdown(index=False), ""]
+        lines += [
+            "## Selected CFS method coverage",
+            "",
+            coverage.to_markdown(index=False),
+            "",
+        ]
 
     if not restrictions.empty:
-        lines += ["## Sample-restriction status", "", restrictions.to_markdown(index=False), ""]
+        lines += [
+            "## Sample-restriction status",
+            "",
+            restrictions.to_markdown(index=False),
+            "",
+        ]
 
     if not common_status.empty:
         lines += [
@@ -111,14 +142,29 @@ def main() -> None:
         columns = [
             column
             for column in [
-                "fiscal_year", "proxy_model", "train_rows", "test_rows", "rmse",
-                "winsorized_rmse", "rmse_ex_top_1pct", "mae",
-                "median_absolute_error", "p95_absolute_error", "p99_absolute_error",
-                "maximum_absolute_error", "maximum_error_issuer", "status",
+                "fiscal_year",
+                "proxy_model",
+                "train_rows",
+                "test_rows",
+                "rmse",
+                "winsorized_rmse",
+                "rmse_ex_top_1pct",
+                "mae",
+                "median_absolute_error",
+                "p95_absolute_error",
+                "p99_absolute_error",
+                "maximum_absolute_error",
+                "maximum_error_issuer",
+                "status",
             ]
             if column in folds.columns
         ]
-        lines += ["## Rolling expected-CFO folds", "", folds[columns].to_markdown(index=False), ""]
+        lines += [
+            "## Rolling expected-CFO folds",
+            "",
+            folds[columns].to_markdown(index=False),
+            "",
+        ]
 
     if not validation.empty:
         primary = validation[
@@ -132,11 +178,15 @@ def main() -> None:
         lines += [
             "## Primary common-sample validation",
             "",
-            primary.to_markdown(index=False) if not primary.empty else "No primary common-sample results were produced.",
+            primary.to_markdown(index=False)
+            if not primary.empty
+            else "No primary common-sample results were produced.",
             "",
             "## All-model common-sample validation",
             "",
-            all_models.to_markdown(index=False) if not all_models.empty else "No all-model common-sample results were produced.",
+            all_models.to_markdown(index=False)
+            if not all_models.empty
+            else "No all-model common-sample results were produced.",
             "",
         ]
 
@@ -144,15 +194,29 @@ def main() -> None:
         columns = [
             column
             for column in [
-                "proxy_model", "outcome", "auc", "reference_auc", "delta_auc_vs_reference",
-                "average_precision", "reference_average_precision", "delta_ap_vs_reference",
-                "top_decile_lift", "reference_top_decile_lift", "delta_lift_vs_reference",
+                "proxy_model",
+                "outcome",
+                "auc",
+                "reference_auc",
+                "delta_auc_vs_reference",
+                "average_precision",
+                "reference_average_precision",
+                "delta_ap_vs_reference",
+                "top_decile_lift",
+                "reference_top_decile_lift",
+                "delta_lift_vs_reference",
             ]
             if column in incremental.columns
         ]
         for mode, title in [
-            ("common_primary_models", "Incremental validity on the primary common sample"),
-            ("common_all_models", "Incremental validity on the all-model common sample"),
+            (
+                "common_primary_models",
+                "Incremental validity on the primary common sample",
+            ),
+            (
+                "common_all_models",
+                "Incremental validity on the all-model common sample",
+            ),
         ]:
             table = incremental[
                 incremental["sample_mode"].eq(mode)
@@ -161,7 +225,9 @@ def main() -> None:
             lines += [
                 f"## {title}",
                 "",
-                table[columns].to_markdown(index=False) if not table.empty else "No incremental comparison was produced.",
+                table[columns].to_markdown(index=False)
+                if not table.empty
+                else "No incremental comparison was produced.",
                 "",
             ]
 
@@ -173,12 +239,14 @@ def main() -> None:
         lines += [
             "## Temporal stability on the primary sample",
             "",
-            temporal.to_markdown(index=False) if not temporal.empty else "No annual primary common-sample results were produced.",
+            temporal.to_markdown(index=False)
+            if not temporal.empty
+            else "No annual primary common-sample results were produced.",
             "",
         ]
 
     if not reconciliation.empty:
-        candidate_label = config["cfs_shifting_validation"].get(
+        candidate_label = settings.get(
             "candidate_label",
             "identity_consistent_offsetting_reclassification_candidate",
         )
@@ -222,7 +290,7 @@ def main() -> None:
         "3. Prediction of CFI-dominant increases by the negative score indicates a bidirectional classification-reliability construct, not a one-sided manipulation construct.",
         "4. Expected-CFO models must improve on raw CFO and within-year percentile baselines on the same firm-year sample.",
         "5. A conclusion is sample-robust only if it is stable on both `common_primary_models` and `common_all_models`; differences quantify the effect of requiring issuer history.",
-        "6. `analysis_core` is fully evaluated only when ICB financial status and scale/scope flags are both available; otherwise the status is `PARTIALLY_EVALUATED`.",
+        "6. Scale/scope screening is waived by design because both preliminary and audited observations come from the same controlled source, monetary unit, reporting scope, and period convention; this assumption is disclosed in the paper.",
         "7. Line-item mechanisms are named only when mapped lines reconcile materially to aggregate CFI/CFF changes and source-document checks confirm semantic labels.",
     ]
 
