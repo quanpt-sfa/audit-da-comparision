@@ -1,0 +1,53 @@
+paths:
+  baseline_input: artifacts/ols_baselines.csv.gz
+  panel_input: data/processed/accrual_panel.csv.gz
+  output_dir: artifacts/next_diagnostics
+
+data:
+  audited_label: audited
+  unaudited_label: unaudited
+
+tail_audit:
+  primary_model: modified_jones
+  primary_benchmark: audited_reference
+  tail_fraction: 0.01
+  manual_cases_per_side: 30
+  special_year: 2024
+
+sign_transitions:
+  sign_epsilon_grid: [0.0, 0.0025, 0.005, 0.01]
+  reduction_delta_grid: [0.0, 0.0025, 0.005, 0.01]
+
+placebo:
+  models: [jones, modified_jones, kothari, nonlinear_modified_jones]
+  common_benchmarks: [pre_reference, audited_reference]
+  strata_columns: [fiscal_year, raw_exchange]
+  minimum_stratum_size: 20
+  permutations: 1000
+  trim_fraction: 0.01
+  random_seed: 20260719
+  identity_tolerance: 1.0e-8
+
+calibration:
+  minimum_test_year: 2018
+  maximum_test_year: 2025
+  minimum_train_rows: 500
+  minimum_validation_rows: 100
+  winsor_lower: 0.01
+  winsor_upper: 0.99
+  random_seed: 20260719
+  candidate_models:
+    jones: [inv_assets, drev_scaled, ppe_scaled]
+    modified_jones: [inv_assets, drev_drec_scaled, ppe_scaled]
+    kothari: [inv_assets, drev_drec_scaled, ppe_scaled, roa]
+    nonlinear_modified_jones: [inv_assets, drev_drec_scaled, ppe_scaled, roa, loss, drev_drec_sq]
+
+model_families:
+  families:
+    classic: [jones, modified_jones]
+    performance_adjusted: [kothari, nonlinear_modified_jones]
+  tolerance_grid: [0.0, 0.0025, 0.005, 0.01]
+
+report:
+  special_year: 2024
+  pandemic_years: [2021, 2022]
