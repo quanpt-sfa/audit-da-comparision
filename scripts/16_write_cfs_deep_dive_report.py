@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 
 from _next_diag_common import load_config, resolve
@@ -12,10 +11,13 @@ from _next_diag_common import load_config, resolve
 def maybe_read(output: Path, name: str) -> pd.DataFrame:
     plain = output / f"{name}.csv"
     compressed = output / f"{name}.csv.gz"
-    if plain.exists():
-        return pd.read_csv(plain, low_memory=False)
-    if compressed.exists():
-        return pd.read_csv(compressed, low_memory=False)
+    try:
+        if plain.exists():
+            return pd.read_csv(plain, low_memory=False)
+        if compressed.exists():
+            return pd.read_csv(compressed, low_memory=False)
+    except pd.errors.EmptyDataError:
+        return pd.DataFrame()
     return pd.DataFrame()
 
 
@@ -70,7 +72,7 @@ def main() -> None:
         ]
     if not incentive.empty:
         lines += ["## Incentive asymmetry descriptives", "", incentive.to_markdown(index=False), ""]
-    if not models.empty:
+    if not models.empty and "term" in models:
         core = models[
             models["term"].isin([
                 "pre_loss", "pre_negative_cfo", "pre_near_zero_cfo",
