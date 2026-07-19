@@ -1,0 +1,91 @@
+paths:
+  input: data/raw/financial_statement_full_long.csv.gz
+  processed_panel: data/processed/accrual_panel.csv.gz
+  posterior_output: artifacts/paired_da_posterior.csv.gz
+  fold_output: artifacts/rolling_fold_diagnostics.csv
+  report_output: artifacts/SIGNAL_GATE_REPORT.md
+  baseline_output: artifacts/ols_baselines.csv.gz
+  profile_output: artifacts/input_profile.json
+
+input:
+  chunksize: 250000
+  audited_label: audited
+  unaudited_label: unaudited
+  required_scope: consolidated
+  allowed_identity_status:
+    - exact
+    - casefold_match
+  minimum_year: 2015
+  maximum_year: 2025
+
+items:
+  assets: balance_sheet__a_tong_cong_tai_san
+  current_assets: balance_sheet__i_tai_san_ngan_han
+  cash: balance_sheet__1_tien_va_tuong_duong_tien
+  current_liabilities: balance_sheet__1_no_ngan_han
+  short_term_debt: balance_sheet__1_10_vay_va_no_thue_tai_chinh_ngan_han
+  tax_payable: balance_sheet__1_3_thue_va_cac_khoan_phai_tra_nha_nuoc
+  receivables: balance_sheet__3_1_phai_thu_ngan_han_cua_khach_hang
+  inventory_gross: balance_sheet__4_1_hang_ton_kho
+  inventory_net: balance_sheet__4_hang_ton_kho_rong
+  ppe_gross: balance_sheet__2_1_1_nguyen_gia_tscd_huu_hinh
+  ppe_net: balance_sheet__2_1_gtcl_tscd_huu_hinh
+  revenue: income_statement__3_doanh_thu_thuan
+  operating_profit: income_statement__11_loi_nhuan_thuan_tu_hoat_dong_kinh_doanh
+  pbt: income_statement__16_tong_loi_nhuan_ke_toan_truoc_thue
+  pat: income_statement__18_loi_nhuan_sau_thue_thu_nhap_doanh_nghiep
+  depreciation: cash_flow_indirect__2_khau_hao_tscd_va_bdsdt_gt
+  cfo_indirect: cash_flow_indirect__i_luu_chuyen_tien_thuan_tu_hoat_dong_kinh_doanh_gt
+  cfo_direct: cash_flow_direct__i_luu_chuyen_tien_te_rong_tu_cac_hoat_dong_san_xuat_kinh_doanh_tt
+
+panel:
+  primary_total_accruals: cash_flow
+  fallback_total_accruals: balance_sheet
+  minimum_lag_assets: 1.0
+  winsor_lower: 0.01
+  winsor_upper: 0.99
+
+models:
+  minimum_train_rows: 500
+  minimum_validation_rows: 100
+  minimum_firm_history: 1
+  posterior_draws: 400
+  random_seed: 20260719
+  candidate_models:
+    jones:
+      - inv_assets
+      - drev_scaled
+      - ppe_scaled
+    modified_jones:
+      - inv_assets
+      - drev_drec_scaled
+      - ppe_scaled
+    kothari:
+      - inv_assets
+      - drev_drec_scaled
+      - ppe_scaled
+      - roa
+    nonlinear_modified_jones:
+      - inv_assets
+      - drev_drec_scaled
+      - ppe_scaled
+      - roa
+      - loss
+      - drev_drec_sq
+
+signal:
+  benchmarks:
+    - version_specific
+    - pre_reference
+    - audited_reference
+  rho_grid: [0.0, 0.5, 0.9, 1.0]
+  error_sd_ratio_grid: [1.0]
+  delta_grid: [0.0, 0.0025, 0.005, 0.01]
+  decisive_probability: 0.80
+  minimum_test_year: 2018
+  maximum_test_year: 2025
+
+report:
+  minimum_pairs: 500
+  minimum_decisive_rate: 0.05
+  minimum_benchmark_direction_agreement: 0.67
