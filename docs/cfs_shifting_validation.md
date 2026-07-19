@@ -2,9 +2,9 @@
 
 ## Purpose
 
-The existing diagnostics observe preliminary-to-audited cash-flow reclassifications. This stage asks whether indirect classification-shifting proxies used in prior literature identify those observed transitions out of time.
+The diagnostics observe preliminary-to-audited cash-flow reclassifications. This stage asks whether indirect classification-shifting proxies identify those observed transitions out of time.
 
-Observed revision is treated as a validation outcome, not as proof of managerial intent. The analysis distinguishes:
+Observed revision is a validation outcome, not proof of managerial intent. The analysis distinguishes:
 
 1. any identity-consistent reclassification candidate;
 2. audited CFO decreases;
@@ -14,9 +14,20 @@ Observed revision is treated as a validation outcome, not as proof of managerial
 
 A proxy that predicts any candidate but cannot distinguish direction or channel is a reporting-instability screen, not a validated manipulation proxy.
 
+## Estimation population
+
+Expected-CFO models are estimated only on the locked research population before firm history or rolling folds are constructed:
+
+- known non-financial ICB classification;
+- HOSE, HNX or UPCoM;
+- valid ticker format;
+- positive lagged assets.
+
+Unknown-industry and financial observations are excluded before fitting, not merely removed from the final evaluation sample. The pipeline writes `cfs_expected_cfo_estimation_sample_status.csv` as evidence for this gate.
+
 ## Outcome-specific scores
 
-A single signed residual cannot validly rank all five outcomes. The protocol therefore uses:
+A single signed residual cannot rank all five outcomes. The protocol uses:
 
 - `abs(abnormal_cfo_proxy)` for any reclassification;
 - `abnormal_cfo_proxy` for audited CFO decreases and CFF-down candidates;
@@ -28,62 +39,67 @@ Top-decile rates and lifts are recomputed from the outcome-specific score within
 
 All expected-CFO models use unaudited information and expanding prior-year training samples.
 
-- `sales_level_only`: inverse assets and preliminary sales.
-- `roychowdhury_sales`: inverse assets, sales and sales changes.
-- `earnings_conditioned`: adds preliminary earnings.
-- `earnings_working_capital`: conditions on preliminary earnings, sales and receivables movements and loss status.
+- `sales_level_only`: inverse assets and preliminary sales;
+- `roychowdhury_sales`: inverse assets, sales and sales changes;
+- `earnings_conditioned`: adds preliminary earnings;
+- `earnings_working_capital`: conditions on earnings, sales and receivables movements and loss status;
+- `earnings_working_capital_history`: adds the issuer's prior-only median CFO to the EWC specification.
 
-Simple baselines are evaluated alongside the expected-CFO models:
+Simple baselines are:
 
 - raw preliminary CFO scaled by lagged assets;
 - within-year CFO percentile;
 - deviation from the issuer's prior-year median CFO.
 
-Incremental validity is measured relative to raw CFO on the same firm-year sample.
+The nested EWC+history model is compared with EWC on the identical `common_all_models` firm-year sample in `cfs_history_incremental_comparison.csv`.
 
-## Common-sample rule
+## Common-sample rules
 
-Model comparisons use the intersection of firm-years available for every prespecified comparison model. Model-specific samples remain available only as coverage diagnostics. AUC, average precision and lift are not compared across samples with different prevalence.
+`common_primary_models` excludes history requirements and defines the main estimand. `common_all_models` requires both the standalone history baseline and the nested EWC+history model. AUC, average precision and lift are never compared across different firm-year samples without an explicit sample-sensitivity table.
 
 ## Fold robustness
 
-Each expanding-window expected-CFO fold reports:
+Each expanding-window expected-CFO fold reports raw and robust errors: RMSE, 1%/99% winsorized RMSE, RMSE excluding the largest 1% absolute residuals, MAE, median absolute error, p95/p99 errors and the maximum-error issuer.
 
-- raw RMSE;
-- 1%/99% winsorized RMSE;
-- RMSE after excluding the largest 1% absolute residuals;
-- MAE and median absolute error;
-- p95 and p99 absolute error;
-- maximum absolute error and the responsible issuer.
+## Scale and scope
 
-Raw RMSE alone is not interpreted when the residual distribution is heavy-tailed.
-
-## Sample restrictions
-
-The protocol reports full and restricted samples for:
-
-- HOSE/HNX/UPCoM only;
-- valid ticker format;
-- lagged-assets floor;
-- exclusion of available scale/scope anomaly flags;
-- non-financial firms when industry metadata or a financial-firm flag exists;
-- an `analysis_core` sample combining all restrictions that can be evaluated.
-
-Unavailable industry or scale/scope metadata is reported as `NOT_EVALUATED`; it is never silently assumed.
+Additional scale/scope screening is waived by design. Preliminary and audited records are provided under the same source-controlled monetary unit, consolidated scope and reporting-period convention. This maintained data-design assumption is disclosed in the paper and reported as `WAIVED_BY_DESIGN`; it does not remove observations.
 
 ## Detailed CFS line items
 
-The raw long file is scanned in chunks. Regex rules map source items to conservative concepts covering operating, investing and financing cash flows. The mapping explicitly separates loan recoveries from investment disposals, interest receipts from dividend receipts, debt repayments from lease-principal payments, and owner contributions from share repurchases.
+The raw long file is scanned in chunks and mapped to conservative operating, investing and financing concepts. Line-item reconciliation is recomputed directly on:
 
-The pipeline exports every unmapped or ambiguous source item. Institutional interpretations are prohibited until high-coverage mapping-review items and selected source documents are checked.
+- `common_primary_models + analysis_core`;
+- `common_all_models + analysis_core`.
 
-Mapped line-item changes are reconciled to aggregate CFI and CFF changes. The primary top-contributor table contains reclassification candidates only. A separate all-resolution table is retained as an audit trail.
+Main mechanism claims must use the common-primary/core outputs rather than full-universe contributor tables.
+
+## Source-document verification
+
+The pipeline generates `cfs_pdf_verification_manifest.csv` with prespecified quotas for:
+
+- CFF-down borrowing-proceeds cases;
+- CFI-up PPE-purchase cases;
+- CFI-up loans-advanced cases;
+- the largest reconciliation exceptions;
+- forced cases such as DBT 2024.
+
+Manifest creation is not document verification. Each row remains `PENDING` until a reviewer records the source document, marks `document_checked=true` and supplies a verification result.
+
+## Completion gates
+
+`cfs_completion_gate_status.csv` records:
+
+- non-financial estimation population;
+- nested history incremental test;
+- common-primary/core reconciliation;
+- PDF verification manifest;
+- scale/scope waiver.
 
 ## Decision rules
 
+- Expected-CFO results are admissible only if the estimation-population gate passes.
 - Predicting CFF-downward revisions supports validation of an upward-CFO shifting proxy.
 - Predicting CFI-upward revisions with the inverse score supports a bidirectional classification-reliability construct.
-- Predicting any revision requires the absolute residual; a signed score mechanically cancels the two tails.
-- Expected-CFO models must improve on raw CFO and percentile baselines on the common sample.
-- A named line-item mechanism requires material reconciliation coverage and source-document confirmation.
-- Poor performance after the listed/core restrictions indicates limited transportability rather than evidence against all classification revisions.
+- The nested history model is retained only if it improves EWC on the identical all-model sample.
+- A named line-item mechanism requires common-primary/core reconciliation coverage and source-document confirmation.
