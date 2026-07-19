@@ -33,6 +33,7 @@ def main() -> None:
     incremental = maybe_read(output, "cfs_shifting_proxy_incremental_comparison")
     restrictions = maybe_read(output, "cfs_proxy_sample_restriction_status")
     common_status = maybe_read(output, "cfs_common_sample_status")
+    common_comparison = maybe_read(output, "cfs_common_sample_metric_comparison")
     industry_status = maybe_read(output, "cfs_industry_mapping_status")
     industry_unmatched = maybe_read(output, "cfs_industry_unmatched_tickers")
     reconciliation = maybe_read(output, "cfs_line_item_reconciliation_summary")
@@ -90,6 +91,19 @@ def main() -> None:
             common_status.to_markdown(index=False),
             "",
             "The primary table excludes `firm_history_deviation`; the all-model table shows whether conclusions change after requiring prior issuer history.",
+            "",
+        ]
+
+    if not common_comparison.empty:
+        core_comparison = common_comparison[
+            common_comparison["sample_restriction"].eq("analysis_core")
+        ].copy()
+        lines += [
+            "## Primary versus all-model sample sensitivity",
+            "",
+            core_comparison.to_markdown(index=False)
+            if not core_comparison.empty
+            else "No analysis-core common-sample comparison was produced.",
             "",
         ]
 
