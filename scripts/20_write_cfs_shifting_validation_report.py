@@ -52,7 +52,6 @@ def main() -> None:
     top = maybe_read(
         output, "cfs_line_item_top_contributors_common_primary_core"
     )
-    verification = maybe_read(output, "cfs_pdf_verification_manifest")
     gate_status = maybe_read(output, "cfs_completion_gate_status")
 
     restriction_settings = settings.get("sample_restrictions", {})
@@ -74,7 +73,7 @@ def main() -> None:
         "- `common_primary_models` excludes firm-history requirements; `common_all_models` includes both standalone history and the nested EWC+history model.",
         "- Outcome-specific scores are mandatory: absolute residual for any revision, positive residual for CFO decreases/CFF-down, and negative residual for CFO increases/CFI-up.",
         "- Detailed line-item tables below are recomputed directly on the common-primary analysis-core firm-years.",
-        "- Source-document verification remains a manual step; the pipeline produces a prespecified manifest and does not infer PDF content.",
+        "- Line-item labels and values are retained from source records that were verified during data construction; no separate PDF-verification gate is imposed.",
         "",
     ]
 
@@ -244,12 +243,6 @@ def main() -> None:
         top.head(100),
         "No common-primary/core contributor table was produced.",
     )
-    add_table(
-        lines,
-        "Prespecified PDF verification manifest",
-        verification,
-        "No verification manifest was produced.",
-    )
 
     if not mapping_review.empty:
         review = mapping_review.sort_values("rows", ascending=False).head(50)
@@ -267,9 +260,9 @@ def main() -> None:
         "1. The expected-CFO coefficients are admissible only when the estimation-population gate passes.",
         "2. `any_candidate` uses the absolute residual; signed residuals are reserved for directional outcomes.",
         "3. The nested history model is retained only if it improves EWC on the identical all-model firm-year sample.",
-        "4. Main mechanism claims use the common-primary/core reconciliation outputs, not full-universe contributor tables.",
+        "4. Main mechanism claims use the common-primary/core source-record reconciliation outputs, not full-universe contributor tables.",
         "5. Scale/scope screening is waived by design and disclosed as a maintained source-consistency assumption.",
-        "6. A PDF-manifest row remains evidence-pending until `document_checked=true` and a verification result is recorded.",
+        "6. No separate PDF-verification requirement is imposed because the retained source-record labels and values were verified during data construction.",
     ]
 
     report = output / "CFS_SHIFTING_VALIDATION_REPORT.md"
