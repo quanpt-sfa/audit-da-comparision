@@ -87,7 +87,7 @@ def extract_wide_panel(path: str | Path, config: dict[str, Any]) -> pd.DataFrame
     if (duplicate_counts > 1).any():
         long = long.groupby(KEYS + ["variable"], as_index=False, observed=True)["value_numeric"].median()
     wide = long.pivot(index=KEYS, columns="variable", values="value_numeric").reset_index()
-    wide.colums.name = None
+    wide.columns.name = None
     return wide
 
 
@@ -112,7 +112,7 @@ def build_accrual_features(wide: pd.DataFrame, config: dict[str, Any]) -> pd.Dat
         "assets", "revenue", "receivables", "current_assets", "cash",
         "current_liabilities", "short_term_debt", "tax_payable",
     ]
-    lag = audited[[issuer_ticker", "fiscal_year"] + [c for c in lag_columns if c in audited]].copy()
+    lag = audited[["issuer_ticker", "fiscal_year"] + [c for c in lag_columns if c in audited]].copy()
     lag["fiscal_year"] += 1
     lag = lag.rename(columns={c: f"lag_{c}_audited" for c in lag_columns if c in lag})
     frame = frame.merge(lag, on=["issuer_ticker", "fiscal_year"], how="left", validate="many_to_one")
@@ -135,7 +135,7 @@ def build_accrual_features(wide: pd.DataFrame, config: dict[str, Any]) -> pd.Dat
     cash_available = frame["ta_cashflow"].notna()
     balance_available = frame["ta_balance_sheet"].notna()
     if primary == "cash_flow":
-        frame["total_acruals"] = frame["ta_cashflow"].where(cash_available, frame["ta_balance_sheet"])
+        frame["total_accruals"] = frame["ta_cashflow"].where(cash_available, frame["ta_balance_sheet"])
         frame["ta_source"] = np.select(
             [cash_available, (~cash_available) & balance_available],
             ["cash_flow", "balance_sheet"], default="missing",
