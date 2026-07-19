@@ -7,11 +7,27 @@ import pandas as pd
 import yaml
 
 from _next_diag_common import load_config, resolve
-from audit_da.auditor_regime import (
-    load_auditor_firm_year,
-    run_auditor_regime_analysis,
+from audit_da.auditor_regime import run_auditor_regime_analysis
+from audit_da.auditor_source import (
+    discover_auditor_sources,
+    load_auditor_firm_year_resilient,
 )
 from audit_da.diag_common import write_tables
+
+
+AUDITOR_OUTPUTS = (
+    "cfs_auditor_firm_year",
+    "cfs_auditor_name_mapping",
+    "cfs_auditor_analysis_sample",
+    "cfs_auditor_regime_coverage",
+    "cfs_auditor_regime_metrics",
+    "cfs_auditor_regime_metric_differences",
+    "cfs_auditor_regime_bootstrap",
+    "cfs_auditor_regime_interaction",
+    "cfs_auditor_regime_balance",
+    "cfs_auditor_switch_events",
+    "cfs_auditor_switch_summary",
+)
 
 
 def read_table(output: Path, name: str, required: bool = True) -> pd.DataFrame:
@@ -23,19 +39,35 @@ def read_table(output: Path, name: str, required: bool = True) -> pd.DataFrame:
     return pd.DataFrame()
 
 
-def source_paths(config_path: Path, config: dict, settings: dict) -> list[Path]:
+def configured_source_paths(
+    config_path: Path, config: dict, settings: dict
+) -> list[Path]:
     configured = settings.get(
-        "source_preference", ["auditor_input", "panel_input", "raw_input"]
+        "source_preference",
+        ["auditor_input", "audit_input", "panel_input", "raw_input"],
     )
     paths: list[Path] = []
     for key in configured:
         value = config.get("paths", {}).get(key)
-        if not value:
-            continue
-        path = resolve(config_path, value)
-        if path not in paths:
-            paths.append(path)
-    return paths
+        if value:
+            paths.append(resolve(config_path, value))
+    repo_root = config_path.parent.parent
+    for value in settings.get("explicit_source_paths", []):
+        path = Path(value)
+        paths.append(path if path.is_absolute() else repo_root / path)
+    return discover_auditor_sources(
+        repo_root,
+        paths,
+        settings.get(
+            "source_globs",
+            [
+                "data/**/bctc_audit_annual_long.csv",
+                "data/**/bctc_audit_annual_long.csv.gz",
+                "data/**/*audit*annual*.csv",
+                "data/**/*audit*annual*.csv.gz",
+            ],
+        ),
+    )
 
 
 def update_completion_gate(output: Path, auditor_status: pd.DataFrame) -> pd.DataFrame:
@@ -44,12 +76,12 @@ def update_completion_gate(output: Path, auditor_status: pd.DataFrame) -> pd.Dat
         "gate": "auditor_regime_heterogeneity",
         "status": (
             auditor_status.loc[0, "status"]
-            if not auditor_status.empty
+            if not auditor_status.empty and "status" in auditor_status
             else "NOT_EVALUATED"
         ),
         "evidence_rows": (
             int(auditor_status.loc[0, "known_auditor_rows"])
-            if not auditor_status.empty
+            if not auditor_status.empty and "known_auditor_rows" in auditor_status
             else 0
         ),
     }
@@ -57,6 +89,40 @@ def update_completion_gate(output: Path, auditor_status: pd.DataFrame) -> pd.Dat
         return pd.DataFrame([row])
     current = current[~current["gate"].eq(row["gate"])].copy()
     return pd.concat([current, pd.DataFrame([row])], ignore_index=True)
+
+
+def remove_stale_outputs(output: Path) -> None:
+    for name in AUDITOR_OUTPUTS:
+        for suffix in (".csv", ".csv.gz"):
+            path = output / f"{name}{suffix}"
+            if path.exists():
+                path.unlink()
+
+
+def unavailable_status(cases: pd.DataFrame, source_status: pd.DataFrame) -> pd.DataFrame:
+    detail = "No usable auditor source was found."
+    if not source_status.empty:
+        fields = [
+            column
+            for column in ("path", "status", "reason")
+            if column in source_status
+        ]
+        if fields:
+            detail = "; ".join(
+                " | ".join(str(row.get(column, "")) for column in fields)
+                for row in source_status[fields].to_dict("records")
+            )
+    return pd.DataFrame(
+        [
+            {
+                "status": "NOT_EVALUATED",
+                "reason": detail,
+                "analysis_rows": len(cases),
+                "known_auditor_rows": 0,
+                "known_auditor_share": 0.0,
+            }
+        ]
+    )
 
 
 def main() -> None:
@@ -86,12 +152,31 @@ def main() -> None:
             "case_table", "cfs_shifting_proxy_common_primary_core_cases"
         ),
     )
-    firm_year, name_map, source_status = load_auditor_firm_year(
-        source_paths(config_path, config, settings),
+    paths = configured_source_paths(config_path, config, settings)
+    firm_year, name_map, source_status = load_auditor_firm_year_resilient(
+        paths,
         settings,
         audited_label=cfs_settings.get("audited_label", "audited"),
         required_scope=cfs_settings.get("required_scope", "consolidated"),
     )
+
+    if firm_year.empty:
+        remove_stale_outputs(output)
+        regime_status = unavailable_status(cases, source_status)
+        tables = {
+            "cfs_auditor_source_status": source_status,
+            "cfs_auditor_regime_status": regime_status,
+            "cfs_completion_gate_status": update_completion_gate(
+                output, regime_status
+            ),
+        }
+        write_tables(tables, output)
+        message = regime_status.loc[0, "reason"]
+        if settings.get("fail_pipeline_if_unavailable", False):
+            raise ValueError(message)
+        print(f"Auditor-regime analysis not evaluated: {message}")
+        return
+
     tables = run_auditor_regime_analysis(cases, firm_year, settings)
     tables["cfs_auditor_firm_year"] = firm_year
     tables["cfs_auditor_name_mapping"] = name_map
