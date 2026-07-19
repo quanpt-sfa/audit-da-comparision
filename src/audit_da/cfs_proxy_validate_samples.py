@@ -176,7 +176,7 @@ def _common_mode_comparison(summary: pd.DataFrame) -> pd.DataFrame:
     metrics = ["rows", "positives", "prevalence", "auc", "average_precision", "top_decile_lift"]
     primary = primary[keys + metrics].rename(columns={column: f"primary_{column}" for column in metrics})
     all_models = all_models[keys + metrics].rename(columns={column: f"all_models_{column}" for column in metrics})
-    comparison = primary.merge(all_models, on=keys, how="outer", validate="one_to_one")
+    comparison = primary.merge(all_models, on=keys, how="inner", validate="one_to_one")
     comparison["firm_year_rows_lost"] = comparison["primary_rows"] - comparison["all_models_rows"]
     comparison["coverage_ratio_all_vs_primary"] = comparison["all_models_rows"] / comparison["primary_rows"]
     comparison["delta_auc_all_minus_primary"] = comparison["all_models_auc"] - comparison["primary_auc"]
