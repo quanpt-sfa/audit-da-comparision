@@ -1,0 +1,21 @@
+paths:
+  baseline_input: artifacts/ols_baselines.csv.gz
+  output_dir: artifacts/ols_diagnostics
+
+diagnostics:
+  zero_tolerance: 1.0e-10
+  summary_trim_fraction: 0.01
+  near_zero_tolerance_grid:
+    - 1.0e-10
+    - 0.0001
+    - 0.0005
+    - 0.001
+    - 0.0025
+    - 0.005
+    - 0.01
+  trim_fraction_grid:
+    - 0.0
+    - 0.005
+    - 0.01
+    - 0.025
+    - 0.05
