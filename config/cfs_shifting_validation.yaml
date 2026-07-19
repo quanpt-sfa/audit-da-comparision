@@ -27,31 +27,16 @@ cfs_shifting_validation:
   fold_winsor_upper: 0.99
   incremental_reference_model: raw_cfo_level
 
+  # Exact schema of source/bctc_industry_icb.csv supplied for this project.
+  # The file is a static ticker-level mapping with no fiscal-year or numeric ICB-code column.
   industry_mapping:
     required: true
-    financial_industry_regex: 'financial|bank|insurance|securit|tai chinh|ngan hang|bao hiem|chung khoan'
-    financial_icb_prefixes: ['8']
-    industry_name_candidates:
-      - icb_industry_name
-      - icb_level_1_name
-      - icb1_name
-      - icb_industry
-      - industry_name
-      - industry
-      - sector_name
-      - sector
-      - nganh_cap_1
-      - ten_nganh_icb
-      - ten_nganh
-    icb_code_candidates:
-      - icb_industry_code
-      - icb_level_1_code
-      - icb1_code
-      - icb_code
-      - industry_code
-      - sector_code
-      - ma_nganh_icb
-      - ma_nganh_cap_1
+    ticker_column: issuer_ticker
+    industry_column: icb_l1
+    icb_level_columns: [icb_l1, icb_l2, icb_l3, icb_l4, icb_l5]
+    retain_columns: [source_ticker_raw, firm_name_raw, exchange_raw]
+    financial_industry_values: ['Tài chính', 'Ngân hàng']
+    missing_industry_is_unknown: true
 
   proxy_models:
     sales_level_only: [inv_assets, pre_revenue_scaled]
@@ -90,7 +75,6 @@ cfs_shifting_validation:
   sample_restrictions:
     listed_exchanges: [HOSE, HNX, UPCOM]
     lag_assets_floor_quantile: 0.01
-    financial_industry_regex: 'bank|financial|insurance|securit|ngan hang|bao hiem|chung khoan'
     scale_scope_flag_columns:
       - combined_scale_scope_flag
       - scale_scope_flag
