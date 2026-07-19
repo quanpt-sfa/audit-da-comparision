@@ -1,64 +1,61 @@
-# Auditor-regime heterogeneity protocol
+# Auditor-regime heterogeneity for CFS proxy validation
 
-## Question
+## Purpose
 
-The analysis asks whether abnormal-CFO criterion validity differs between Big4 and non-Big4 audit regimes. Auditor identity is not an expected-CFO predictor. It is joined to the locked `common_primary_models + analysis_core` cases after out-of-time scores have been generated.
+This extension tests whether the criterion validity of abnormal-CFO scores differs between Big4 and non-Big4 audit regimes. Auditor identity is joined only after expected-CFO scores are constructed and is never used as an expected-CFO predictor.
 
-## Auditor mapping
+## Auditor source discovery
 
-The loader searches the configured auditor input, the processed panel, and then the raw long source. Column names may be configured explicitly; otherwise conservative candidate lists and schema detection are used. Raw auditor names are normalized to:
+The accounting panel and financial-statement long file do not need to contain auditor identity. The loader searches, in order:
 
-- `BIG4`: Deloitte, PwC/PricewaterhouseCoopers, EY/Ernst & Young, or KPMG;
-- `NON_BIG4`: a non-empty auditor name matching no Big4 brand;
-- `UNKNOWN`: no usable auditor name;
-- `AMBIGUOUS`: conflicting auditor identities for one issuer-year or multiple Big4 brands in one raw label.
+1. configured `auditor_input` or `audit_input` paths;
+2. `panel_input` and `raw_input` when they contain auditor metadata;
+3. explicit historical paths such as `data/bctc_audit_annual_long.csv`;
+4. conservative repository globs for `bctc_audit_annual_long.csv*` and annual audit CSV files.
 
-Missing auditor values are never coded as non-Big4. The pipeline exports raw-to-normalized mappings and firm-year resolution statuses.
+Two source schemas are supported:
 
-## Primary heterogeneity evidence
+- wide schema, where fields such as `audit_firm_name` or `auditor_name` are columns;
+- long schema, where `audit_indicator` identifies `audit_firm` and a value column contains the original audit-firm name.
 
-For the prespecified `earnings_working_capital` proxy, the pipeline reports by auditor group:
+The source-status output records the selected file, schema type, ticker/year fields, indicator/value fields when applicable, and coverage counts. Unknown auditor names are not coded as non-Big4.
 
-- candidate prevalence;
-- AUC;
-- average precision;
-- within-group/year top-decile rate and lift;
-- Big4-minus-non-Big4 differences;
-- issuer-cluster bootstrap confidence intervals.
+If no usable auditor source is found, the extension writes `NOT_EVALUATED`, removes stale auditor result tables, and allows the pooled CFS validation pipeline to finish. Set `fail_pipeline_if_unavailable: true` only when auditor heterogeneity is intentionally treated as a mandatory execution gate.
 
-Outcome-specific scores remain unchanged:
+## Auditor normalization
 
-- absolute abnormal CFO for any candidate;
-- positive abnormal CFO for CFO decreases and CFF-down candidates;
-- negative abnormal CFO for CFO increases and CFI-up candidates.
+Original audit-firm names are retained and normalized into:
 
-## Interaction model
+- `BIG4`;
+- `NON_BIG4`;
+- `UNKNOWN`;
+- `AMBIGUOUS`.
 
-For each outcome, a logistic model includes standardized score, Big4, and score-by-Big4. Controls are restricted to fields already available in the locked case table. The default specification includes log lagged assets, preliminary CFO, and year, exchange, and industry fixed effects. Standard errors are clustered by issuer.
+Big4 matching covers Deloitte, PwC/PricewaterhouseCoopers, EY/Ernst & Young, and KPMG. Multiple inconsistent auditor names within the same issuer-year are classified as ambiguous rather than silently selecting one.
 
-The score-by-Big4 term is the focal coefficient. The Big4 main effect alone is not interpreted as audit quality because auditor choice is endogenous.
+## Analysis sample
 
-## Selection and switches
+The extension uses `earnings_working_capital` scores from:
 
-The pipeline reports standardized mean differences for size, preliminary CFO, abnormal CFO, exchange, industry, and year composition. It also counts consecutive-year switches between Big4 and non-Big4. These diagnostics delimit, but do not eliminate, auditor-client selection.
+- `common_primary_models`;
+- `analysis_core`.
+
+The pooled sample remains unchanged. Auditor coverage does not filter the main validation results.
 
 ## Outputs
 
-- `cfs_auditor_source_status.csv`
-- `cfs_auditor_name_mapping.csv`
-- `cfs_auditor_firm_year.csv`
-- `cfs_auditor_analysis_sample.csv.gz`
-- `cfs_auditor_regime_coverage.csv`
-- `cfs_auditor_regime_metrics.csv`
-- `cfs_auditor_regime_metric_differences.csv`
-- `cfs_auditor_regime_bootstrap.csv`
-- `cfs_auditor_regime_interaction.csv`
-- `cfs_auditor_regime_balance.csv`
-- `cfs_auditor_switch_events.csv`
-- `cfs_auditor_switch_summary.csv`
-- `cfs_auditor_regime_status.csv`
-- `CFS_AUDITOR_REGIME_REPORT.md`
+The extension reports:
+
+- auditor source and schema status;
+- name mapping and issuer-year auditor assignments;
+- Big4/non-Big4/unknown/ambiguous coverage and outcome prevalence;
+- group-specific AUC, average precision, top-decile rate and lift;
+- Big4-minus-non-Big4 metric differences;
+- issuer-cluster bootstrap confidence intervals;
+- score-by-Big4 logistic interaction models;
+- balance diagnostics;
+- consecutive-year auditor-tier switches.
 
 ## Interpretation
 
-A stronger score relationship among Big4 clients indicates that the observed correction target is conditional on the audit regime producing that correction. It does not prove that Big4 auditors causally improve reporting. A null difference supports transportability of the proxy across auditor tiers. A prevalence difference without a score interaction is primarily a client-composition result.
+The focal parameter is the interaction between the outcome-specific abnormal-CFO score and the Big4 indicator. A prevalence difference alone does not identify audit quality because Big4 and non-Big4 clients are selected populations. Results therefore describe audit-regime-dependent criterion validity, not a causal effect of auditor choice.
