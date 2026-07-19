@@ -10,10 +10,11 @@ import pandas as pd
 
 def _normalise_label(value: Any) -> str:
     text = "" if value is None else str(value)
+    text = text.replace("đ", "d").replace("Đ", "D")
     text = unicodedata.normalize("NFKD", text)
     text = "".join(ch for ch in text if not unicodedata.combining(ch))
-    text = text.replace("đ", "d").replace("Đ", "D")
-    return re.sub(r"[^a-zA-Z0-9]+", "_", text.lower()).strip("_")
+    text = re.sub(r"[^a-zA-Z0-9]+", "_", text.lower()).strip("_")
+    return text
 
 
 def _read_csv_flexible(path: str | Path) -> tuple[pd.DataFrame, str]:
@@ -35,19 +36,16 @@ def _find_column(columns: dict[str, str], candidates: list[str]) -> str | None:
     return None
 
 
-def _truthy_nullable(series: pd.Series) -> pd.Series:
-    text = series.astype("string").str.strip().str.lower()
-    result = pd.Series(pd.NA, index=series.index, dtype="boolean")
-    nonmissing = text.notna() & text.ne("")
-    result.loc[nonmissing] = text.loc[nonmissing].isin(
+def _truthy(series: pd.Series) -> pd.Series:
+    text = series.fillna("").astype(str).str.strip().str.lower()
+    return text.isin(
         {"1", "true", "yes", "y", "financial", "tai chinh", "tài chính"}
     )
-    return result
 
 
-def _first_nonmissing(series: pd.Series):
+def _first_known(series: pd.Series):
     values = series.dropna()
-    return values.iloc[0] if not values.empty else pd.NA
+    return values.iloc[0] if len(values) else pd.NA
 
 
 def load_icb_industry(
@@ -61,96 +59,102 @@ def load_icb_industry(
     ticker_column = settings.get("ticker_column") or _find_column(
         normalised,
         [
-            "issuer_ticker", "ticker", "stock_code", "symbol", "code", "ma_ck",
-            "ma_chung_khoan", "mack", "security_code",
+            "issuer_ticker",
+            "ticker",
+            "stock_code",
+            "ticker_code",
+            "stock_symbol",
+            "symbol",
+            "code",
+            "ma_ck",
+            "ma_chung_khoan",
+            "mack",
+            "security_code",
         ],
     )
-    if ticker_column is None or ticker_column not in raw.columns:
+    if ticker_column is None:
         raise ValueError(
-            "Could not identify configured ticker column in industry file. "
-            f"Configured={ticker_column!r}; available={list(raw.columns)}"
-        )
-
-    year_column = settings.get("year_column")
-    if year_column and year_column not in raw.columns:
-        raise ValueError(
-            f"Configured year column {year_column!r} not found. "
-            f"Available columns: {list(raw.columns)}"
-        )
-    if not year_column:
-        year_column = _find_column(
-            normalised, ["fiscal_year", "year", "nam", "report_year"]
-        )
-
-    explicit_flag = settings.get("financial_flag_column")
-    if explicit_flag and explicit_flag not in raw.columns:
-        raise ValueError(
-            f"Configured financial flag column {explicit_flag!r} not found. "
-            f"Available columns: {list(raw.columns)}"
-        )
-    if not explicit_flag:
-        explicit_flag = _find_column(
-            normalised,
-            ["financial_flag", "is_financial", "financial_sector", "tai_chinh"],
-        )
-
-    industry_column = settings.get("industry_column")
-    if industry_column and industry_column not in raw.columns:
-        raise ValueError(
-            f"Configured industry column {industry_column!r} not found. "
-            f"Available columns: {list(raw.columns)}"
-        )
-    if not industry_column:
-        industry_column = _find_column(
-            normalised,
-            [
-                "icb_l1", "icb_industry_name", "icb_level_1_name", "icb1_name",
-                "icb_industry", "industry_name", "industry", "sector_name",
-                "sector", "nganh_cap_1", "ten_nganh_icb", "ten_nganh",
-            ],
-        )
-
-    code_column = settings.get("icb_code_column")
-    if code_column and code_column not in raw.columns:
-        raise ValueError(
-            f"Configured ICB code column {code_column!r} not found. "
-            f"Available columns: {list(raw.columns)}"
-        )
-    if not code_column:
-        code_column = _find_column(
-            normalised,
-            [
-                "icb_industry_code", "icb_level_1_code", "icb1_code", "icb_code",
-                "industry_code", "sector_code", "ma_nganh_icb", "ma_nganh_cap_1",
-            ],
-        )
-
-    icb_level_columns = list(settings.get("icb_level_columns", []))
-    missing_levels = [column for column in icb_level_columns if column not in raw.columns]
-    if missing_levels:
-        raise ValueError(
-            f"Configured ICB level columns not found: {missing_levels}. "
+            "Could not identify a ticker column in industry file. "
             f"Available columns: {list(raw.columns)}"
         )
 
-    retain_columns = list(settings.get("retain_columns", []))
-    missing_retained = [column for column in retain_columns if column not in raw.columns]
-    if missing_retained:
-        raise ValueError(
-            f"Configured retained columns not found: {missing_retained}. "
-            f"Available columns: {list(raw.columns)}"
+    year_column = settings.get("year_column") or _find_column(
+        normalised,
+        ["fiscal_year", "year", "nam", "report_year"],
+    )
+    explicit_flag = settings.get("financial_flag_column") or _find_column(
+        normalised,
+        ["financial_flag", "is_financial", "financial_sector", "tai_chinh"],
+    )
+
+    industry_candidates = settings.get(
+        "industry_name_candidates",
+        [
+            "icb_l1",
+            "icb_industry_name",
+            "icb_level_1_name",
+            "icb_level1_name",
+            "icb_lv1_name",
+            "icb1_name",
+            "icb_industry",
+            "industry_name",
+            "industry",
+            "sector_name",
+            "sector",
+            "nganh_cap_1",
+            "nganh_icb_cap_1",
+            "ten_nganh_icb",
+            "ten_nganh",
+        ],
+    )
+    code_candidates = settings.get(
+        "icb_code_candidates",
+        [
+            "icb_industry_code",
+            "icb_level_1_code",
+            "icb_level1_code",
+            "icb_lv1_code",
+            "icb1_code",
+            "icb_code",
+            "industry_code",
+            "sector_code",
+            "ma_nganh_icb",
+            "ma_nganh_cap_1",
+        ],
+    )
+    industry_column = settings.get("industry_column") or _find_column(
+        normalised, industry_candidates
+    )
+    code_column = settings.get("icb_code_column") or _find_column(
+        normalised, code_candidates
+    )
+
+    retained_requested = list(settings.get("retain_columns", []))
+    icb_levels = list(
+        settings.get(
+            "icb_level_columns",
+            ["icb_l1", "icb_l2", "icb_l3", "icb_l4", "icb_l5"],
         )
+    )
+    retained_columns = [
+        column
+        for column in dict.fromkeys(retained_requested + icb_levels)
+        if column in raw.columns
+    ]
 
     output = pd.DataFrame(index=raw.index)
-    output["issuer_ticker"] = raw[ticker_column].astype("string").str.strip().str.upper()
+    output["issuer_ticker"] = (
+        raw[ticker_column].fillna("").astype(str).str.strip().str.upper()
+    )
     output["issuer_ticker"] = output["issuer_ticker"].str.replace(
         r"\.(HO|HN|UPCOM)$", "", regex=True
     )
-
     if year_column is not None:
-        output["fiscal_year"] = pd.to_numeric(
-            raw[year_column], errors="coerce"
-        ).astype("Int64")
+        parsed_year = pd.to_numeric(raw[year_column], errors="coerce").astype(
+            "Int64"
+        )
+        if parsed_year.notna().any():
+            output["fiscal_year"] = parsed_year
 
     output["industry_name"] = (
         raw[industry_column].astype("string")
@@ -162,79 +166,86 @@ def load_icb_industry(
         if code_column is not None
         else pd.Series(pd.NA, index=raw.index, dtype="string")
     )
+    for column in retained_columns:
+        output[column] = raw[column]
 
-    for column in icb_level_columns + retain_columns:
-        output[column] = raw[column].astype("string")
-
+    known_financial = output["industry_name"].notna()
     if explicit_flag is not None:
-        financial = _truthy_nullable(raw[explicit_flag])
+        financial = _truthy(raw[explicit_flag]).astype("boolean")
         financial_source = explicit_flag
+        if settings.get("missing_industry_is_unknown", False):
+            financial = financial.where(known_financial, pd.NA)
     else:
-        financial = pd.Series(pd.NA, index=raw.index, dtype="boolean")
-        industry_known = (
-            output["industry_name"].notna()
-            & output["industry_name"].str.strip().ne("")
-        )
-        exact_values = {
-            _normalise_label(value)
-            for value in settings.get("financial_industry_values", [])
-        }
-        names = output["industry_name"].map(_normalise_label)
+        exact_values = settings.get("financial_industry_values")
         if exact_values:
-            financial.loc[industry_known] = names.loc[industry_known].isin(exact_values)
-            financial_source = f"exact values from {industry_column}"
+            normalised_values = {
+                _normalise_label(value) for value in exact_values
+            }
+            labels = output["industry_name"].map(_normalise_label)
+            financial = labels.isin(normalised_values).astype("boolean")
+            financial = financial.where(known_financial, pd.NA)
+            financial_source = (
+                f"exact values from {industry_column}: "
+                + "|".join(str(value) for value in exact_values)
+            )
         else:
             pattern = settings.get(
                 "financial_industry_regex",
                 r"financial|bank|insurance|securit|tai chinh|ngan hang|bao hiem|chung khoan",
             )
-            financial.loc[industry_known] = names.loc[industry_known].str.contains(
+            names = (
+                output["industry_name"]
+                .fillna("")
+                .astype(str)
+                .map(_normalise_label)
+                .str.replace("_", " ", regex=False)
+            )
+            financial = names.str.contains(
                 pattern, regex=True, na=False
-            )
-            financial_source = f"regex from {industry_column}"
-
-        if code_column is not None:
+            ).astype("boolean")
             prefixes = tuple(
-                str(value) for value in settings.get("financial_icb_prefixes", [])
+                str(x)
+                for x in settings.get("financial_icb_prefixes", ["8"])
             )
-            codes = output["icb_industry_code"].astype("string").str.replace(
-                r"\.0$", "", regex=True
+            codes = (
+                output["icb_industry_code"]
+                .fillna("")
+                .astype(str)
+                .str.replace(r"\.0$", "", regex=True)
             )
-            code_known = codes.notna() & codes.str.strip().ne("")
-            if prefixes:
-                code_financial = codes.str.startswith(prefixes, na=False)
-                financial.loc[code_known & code_financial] = True
-                financial.loc[code_known & financial.isna()] = False
-                financial_source += f"; code prefixes from {code_column}"
+            if prefixes and code_column is not None:
+                financial |= codes.str.startswith(prefixes)
+            if settings.get("missing_industry_is_unknown", False):
+                financial = financial.where(known_financial, pd.NA)
+            financial_source = "industry_name/icb_code"
+    output["financial_flag"] = financial.astype("boolean")
 
-    if not bool(settings.get("missing_industry_is_unknown", True)):
-        financial = financial.fillna(False)
-    output["financial_flag"] = financial
-
-    output = output[
-        output["issuer_ticker"].notna() & output["issuer_ticker"].ne("")
-    ].copy()
+    output = output[output["issuer_ticker"].ne("")].copy()
     keys = ["issuer_ticker"] + (
-        ["fiscal_year"] if "fiscal_year" in output.columns else []
+        ["fiscal_year"] if "fiscal_year" in output else []
     )
     duplicate_rows = int(output.duplicated(keys, keep=False).sum())
 
     aggregation: dict[str, tuple[str, Any]] = {
-        "industry_name": ("industry_name", _first_nonmissing),
-        "icb_industry_code": ("icb_industry_code", _first_nonmissing),
-        "financial_flag": ("financial_flag", _first_nonmissing),
+        "industry_name": ("industry_name", _first_known),
+        "icb_industry_code": ("icb_industry_code", _first_known),
+        "financial_flag": (
+            "financial_flag",
+            lambda x: x.dropna().iloc[0] if x.notna().any() else pd.NA,
+        ),
     }
-    for column in icb_level_columns + retain_columns:
-        aggregation[column] = (column, _first_nonmissing)
+    for column in retained_columns:
+        if column not in aggregation:
+            aggregation[column] = (column, _first_known)
 
     output = (
         output.sort_values(keys)
-        .groupby(keys, as_index=False, observed=True)
+        .groupby(keys, as_index=False, observed=True, dropna=False)
         .agg(**aggregation)
     )
     output["financial_flag"] = output["financial_flag"].astype("boolean")
 
-    known_financial = output["financial_flag"].notna()
+    known_financial_output = output["financial_flag"].notna()
     status = pd.DataFrame(
         [
             {
@@ -243,16 +254,20 @@ def load_icb_industry(
                 "raw_rows": len(raw),
                 "mapping_rows": len(output),
                 "unique_tickers": output["issuer_ticker"].nunique(),
-                "financial_rows": int(output["financial_flag"].fillna(False).sum()),
-                "nonfinancial_rows": int(output["financial_flag"].eq(False).sum()),
-                "unknown_financial_rows": int(output["financial_flag"].isna().sum()),
+                "financial_rows": int(output["financial_flag"].eq(True).sum()),
+                "nonfinancial_rows": int(
+                    output["financial_flag"].eq(False).sum()
+                ),
+                "unknown_financial_rows": int(
+                    output["financial_flag"].isna().sum()
+                ),
                 "ticker_column": ticker_column,
                 "year_column": year_column or "",
                 "industry_column": industry_column or "",
                 "icb_code_column": code_column or "",
                 "financial_source": financial_source,
                 "duplicate_input_rows": duplicate_rows,
-                "known_financial_share": float(known_financial.mean()),
+                "known_financial_share": float(known_financial_output.mean()),
                 "status": "LOADED",
             }
         ]
@@ -275,7 +290,9 @@ def attach_icb_industry(
             frame["fiscal_year"], errors="coerce"
         ).astype("Int64")
 
-    metadata_columns = [column for column in mapping.columns if column not in keys]
+    metadata_columns = [
+        column for column in mapping.columns if column not in keys
+    ]
     for column in metadata_columns:
         if column in frame.columns:
             frame = frame.drop(columns=[column])
@@ -285,7 +302,7 @@ def attach_icb_industry(
     merged = frame.merge(
         mapping_for_join, on=keys, how="left", validate="many_to_one"
     )
-    key_matched = merged["_industry_key_match"].fillna(False).astype(bool)
+    key_matched = merged["_industry_key_match"].eq(True)
     industry_known = merged["industry_name"].notna()
     if "icb_l1" in merged.columns:
         industry_known |= merged["icb_l1"].notna()
@@ -294,7 +311,9 @@ def attach_icb_industry(
         [
             {
                 "panel_rows": len(merged),
-                "panel_firm_years": merged[["issuer_ticker", "fiscal_year"]]
+                "panel_firm_years": merged[
+                    ["issuer_ticker", "fiscal_year"]
+                ]
                 .drop_duplicates()
                 .shape[0],
                 "key_matched_rows": int(key_matched.sum()),
@@ -303,10 +322,14 @@ def attach_icb_industry(
                     key_matched, "issuer_ticker"
                 ].nunique(),
                 "known_industry_rows": int(industry_known.sum()),
-                "unknown_industry_rows": int((key_matched & ~industry_known).sum()),
-                "known_financial_rows": int(merged["financial_flag"].notna().sum()),
+                "unknown_industry_rows": int(
+                    (key_matched & ~industry_known).sum()
+                ),
+                "known_financial_rows": int(
+                    merged["financial_flag"].notna().sum()
+                ),
                 "financial_panel_rows": int(
-                    merged["financial_flag"].fillna(False).sum()
+                    merged["financial_flag"].eq(True).sum()
                 ),
                 "unknown_financial_panel_rows": int(
                     merged["financial_flag"].isna().sum()
