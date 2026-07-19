@@ -15,6 +15,11 @@ def maybe_read(output: Path, name: str) -> pd.DataFrame:
     return pd.DataFrame()
 
 
+def add_table(lines: list[str], title: str, table: pd.DataFrame, empty: str) -> None:
+    lines += [f"## {title}", ""]
+    lines += [table.to_markdown(index=False) if not table.empty else empty, ""]
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Write the observed CFS shifting validation report"
@@ -23,23 +28,33 @@ def main() -> None:
     args = parser.parse_args()
     config_path, config = load_config(args.config)
     output = resolve(config_path, config["paths"]["output_dir"])
+    settings = config["cfs_shifting_validation"]
 
     inventory = maybe_read(output, "cfs_item_inventory")
     mapping_review = maybe_read(output, "cfs_item_mapping_review")
     coverage = maybe_read(output, "cfs_line_item_method_coverage")
     folds = maybe_read(output, "cfs_expected_cfo_folds")
+    estimation_status = maybe_read(
+        output, "cfs_expected_cfo_estimation_sample_status"
+    )
     validation = maybe_read(output, "cfs_shifting_proxy_validation")
     yearly = maybe_read(output, "cfs_shifting_proxy_validation_by_year")
     incremental = maybe_read(output, "cfs_shifting_proxy_incremental_comparison")
     restrictions = maybe_read(output, "cfs_proxy_sample_restriction_status")
     common_status = maybe_read(output, "cfs_common_sample_status")
     common_comparison = maybe_read(output, "cfs_common_sample_metric_comparison")
+    history_comparison = maybe_read(output, "cfs_history_incremental_comparison")
     industry_status = maybe_read(output, "cfs_industry_mapping_status")
     industry_unmatched = maybe_read(output, "cfs_industry_unmatched_tickers")
-    reconciliation = maybe_read(output, "cfs_line_item_reconciliation_summary")
-    top = maybe_read(output, "cfs_line_item_top_contributors")
+    reconciliation = maybe_read(
+        output, "cfs_line_item_reconciliation_summary_common_primary_core"
+    )
+    top = maybe_read(
+        output, "cfs_line_item_top_contributors_common_primary_core"
+    )
+    verification = maybe_read(output, "cfs_pdf_verification_manifest")
+    gate_status = maybe_read(output, "cfs_completion_gate_status")
 
-    settings = config["cfs_shifting_validation"]
     restriction_settings = settings.get("sample_restrictions", {})
     scale_scope_waived = not restriction_settings.get(
         "require_scale_scope_screening", True
@@ -55,12 +70,11 @@ def main() -> None:
         "## Interpretation boundaries",
         "",
         "- Observed preliminary-to-audited reclassification is a validation outcome, not direct evidence of managerial intent.",
+        "- Expected-CFO models are fitted and tested only on the prespecified listed, valid-ticker, known non-financial population with positive lagged assets.",
+        "- `common_primary_models` excludes firm-history requirements; `common_all_models` includes both standalone history and the nested EWC+history model.",
         "- Outcome-specific scores are mandatory: absolute residual for any revision, positive residual for CFO decreases/CFF-down, and negative residual for CFO increases/CFI-up.",
-        "- `common_primary_models` excludes firm-history deviation; `common_all_models` includes it and quantifies the sample cost of requiring issuer history.",
-        "- Industry exclusions use the external ICB file. Unmatched tickers are not silently classified as non-financial.",
-        "- Detailed line-item contributor tables contain reclassification candidates only; the all-resolution table is a separate audit output.",
-        "- Preliminary and audited records are drawn from the same controlled source, use the same monetary unit, consolidated scope, and reporting-period convention; scale/scope comparability is documented rather than separately screened.",
-        "- Detailed institutional conclusions remain provisional until selected source documents are checked.",
+        "- Detailed line-item tables below are recomputed directly on the common-primary analysis-core firm-years.",
+        "- Source-document verification remains a manual step; the pipeline produces a prespecified manifest and does not infer PDF content.",
         "",
     ]
 
@@ -68,21 +82,28 @@ def main() -> None:
         lines += [
             "## Scale/scope design note",
             "",
-            f"- Status: `WAIVED_BY_DESIGN`.",
+            "- Status: `WAIVED_BY_DESIGN`.",
             f"- Rationale: {scale_scope_reason}",
             "- No observations are removed by an additional scale/scope filter.",
             "",
         ]
 
+    add_table(
+        lines,
+        "Completion-gate status",
+        gate_status,
+        "No completion-gate status was produced.",
+    )
+    add_table(
+        lines,
+        "Expected-CFO estimation population",
+        estimation_status,
+        "No estimation-sample status was produced.",
+    )
+
     if not industry_status.empty:
-        lines += [
-            "## ICB industry mapping",
-            "",
-            industry_status.to_markdown(index=False),
-            "",
-            f"- Unmatched tickers: {len(industry_unmatched):,}.",
-            "",
-        ]
+        add_table(lines, "ICB industry mapping", industry_status, "")
+        lines += [f"- Unmatched tickers: {len(industry_unmatched):,}.", ""]
         if not industry_unmatched.empty:
             lines += [industry_unmatched.head(100).to_markdown(index=False), ""]
 
@@ -99,47 +120,31 @@ def main() -> None:
             "",
         ]
 
-    if not coverage.empty:
-        lines += [
-            "## Selected CFS method coverage",
-            "",
-            coverage.to_markdown(index=False),
-            "",
-        ]
-
-    if not restrictions.empty:
-        lines += [
-            "## Sample-restriction status",
-            "",
-            restrictions.to_markdown(index=False),
-            "",
-        ]
-
-    if not common_status.empty:
-        lines += [
-            "## Common-sample definitions",
-            "",
-            common_status.to_markdown(index=False),
-            "",
-            "The primary table excludes `firm_history_deviation`; the all-model table shows whether conclusions change after requiring prior issuer history.",
-            "",
-        ]
+    add_table(lines, "Selected CFS method coverage", coverage, "No method coverage table.")
+    add_table(lines, "Sample-restriction status", restrictions, "No restriction status.")
+    add_table(lines, "Common-sample definitions", common_status, "No common-sample status.")
 
     if not common_comparison.empty:
-        core_comparison = common_comparison[
+        common_core = common_comparison[
             common_comparison["sample_restriction"].eq("analysis_core")
         ].copy()
-        lines += [
-            "## Primary versus all-model sample sensitivity",
-            "",
-            core_comparison.to_markdown(index=False)
-            if not core_comparison.empty
-            else "No analysis-core common-sample comparison was produced.",
-            "",
-        ]
+    else:
+        common_core = pd.DataFrame()
+    add_table(
+        lines,
+        "Primary versus all-model sample sensitivity",
+        common_core,
+        "No common-sample comparison was produced.",
+    )
+    add_table(
+        lines,
+        "Nested EWC plus firm-history incremental test",
+        history_comparison,
+        "No nested-history comparison was produced.",
+    )
 
     if not folds.empty:
-        columns = [
+        fold_columns = [
             column
             for column in [
                 "fiscal_year",
@@ -159,12 +164,12 @@ def main() -> None:
             ]
             if column in folds.columns
         ]
-        lines += [
-            "## Rolling expected-CFO folds",
-            "",
-            folds[columns].to_markdown(index=False),
-            "",
-        ]
+        add_table(
+            lines,
+            "Rolling expected-CFO folds",
+            folds[fold_columns],
+            "No fold diagnostics were produced.",
+        )
 
     if not validation.empty:
         primary = validation[
@@ -175,23 +180,14 @@ def main() -> None:
             validation["sample_mode"].eq("common_all_models")
             & validation["sample_restriction"].eq("analysis_core")
         ].copy()
-        lines += [
-            "## Primary common-sample validation",
-            "",
-            primary.to_markdown(index=False)
-            if not primary.empty
-            else "No primary common-sample results were produced.",
-            "",
-            "## All-model common-sample validation",
-            "",
-            all_models.to_markdown(index=False)
-            if not all_models.empty
-            else "No all-model common-sample results were produced.",
-            "",
-        ]
+    else:
+        primary = pd.DataFrame()
+        all_models = pd.DataFrame()
+    add_table(lines, "Primary common-sample validation", primary, "No primary results.")
+    add_table(lines, "All-model common-sample validation", all_models, "No all-model results.")
 
     if not incremental.empty:
-        columns = [
+        incremental_columns = [
             column
             for column in [
                 "proxy_model",
@@ -209,75 +205,58 @@ def main() -> None:
             if column in incremental.columns
         ]
         for mode, title in [
-            (
-                "common_primary_models",
-                "Incremental validity on the primary common sample",
-            ),
-            (
-                "common_all_models",
-                "Incremental validity on the all-model common sample",
-            ),
+            ("common_primary_models", "Incremental validity on the primary common sample"),
+            ("common_all_models", "Incremental validity on the all-model common sample"),
         ]:
             table = incremental[
                 incremental["sample_mode"].eq(mode)
                 & incremental["sample_restriction"].eq("analysis_core")
             ].copy()
-            lines += [
-                f"## {title}",
-                "",
-                table[columns].to_markdown(index=False)
-                if not table.empty
-                else "No incremental comparison was produced.",
-                "",
-            ]
+            add_table(
+                lines,
+                title,
+                table[incremental_columns] if not table.empty else table,
+                "No incremental comparison was produced.",
+            )
 
     if not yearly.empty:
         temporal = yearly[
             yearly["sample_mode"].eq("common_primary_models")
             & yearly["sample_restriction"].eq("analysis_core")
         ].copy()
-        lines += [
-            "## Temporal stability on the primary sample",
-            "",
-            temporal.to_markdown(index=False)
-            if not temporal.empty
-            else "No annual primary common-sample results were produced.",
-            "",
-        ]
-
-    if not reconciliation.empty:
-        candidate_label = settings.get(
-            "candidate_label",
-            "identity_consistent_offsetting_reclassification_candidate",
-        )
-        candidate_reconciliation = reconciliation[
-            reconciliation["cfs_resolution"].eq(candidate_label)
-        ]
-        lines += [
-            "## Candidate-only detailed line-item reconciliation",
-            "",
-            candidate_reconciliation.to_markdown(index=False)
-            if not candidate_reconciliation.empty
-            else "No candidate reconciliation results were produced.",
-            "",
-        ]
-
-    if not top.empty:
-        lines += [
-            "## Largest mapped contributors among candidates",
-            "",
-            top.head(100).to_markdown(index=False),
-            "",
-        ]
+    else:
+        temporal = pd.DataFrame()
+    add_table(
+        lines,
+        "Temporal stability on the primary sample",
+        temporal,
+        "No annual primary results were produced.",
+    )
+    add_table(
+        lines,
+        "Common-primary/core line-item reconciliation",
+        reconciliation,
+        "No common-primary/core reconciliation was produced.",
+    )
+    add_table(
+        lines,
+        "Common-primary/core mapped contributors",
+        top.head(100),
+        "No common-primary/core contributor table was produced.",
+    )
+    add_table(
+        lines,
+        "Prespecified PDF verification manifest",
+        verification,
+        "No verification manifest was produced.",
+    )
 
     if not mapping_review.empty:
         review = mapping_review.sort_values("rows", ascending=False).head(50)
         lines += [
-            "## Mapping review obligation",
+            "## Residual mapping-review obligation",
             "",
             f"- Items requiring manual mapping review: {len(mapping_review):,}.",
-            "- Review the highest-coverage rows before naming a borrowing, lease, dividend, lending, or investment mechanism.",
-            "",
             review.to_markdown(index=False),
             "",
         ]
@@ -285,13 +264,12 @@ def main() -> None:
     lines += [
         "## Decision rules",
         "",
-        "1. `any_candidate` uses the absolute residual; using the signed residual mechanically cancels positive- and negative-tail reclassifications.",
-        "2. A proxy supports upward preliminary-CFO shifting only if the positive score predicts audited CFO decreases, especially CFF-dominant decreases.",
-        "3. Prediction of CFI-dominant increases by the negative score indicates a bidirectional classification-reliability construct, not a one-sided manipulation construct.",
-        "4. Expected-CFO models must improve on raw CFO and within-year percentile baselines on the same firm-year sample.",
-        "5. A conclusion is sample-robust only if it is stable on both `common_primary_models` and `common_all_models`; differences quantify the effect of requiring issuer history.",
-        "6. Scale/scope screening is waived by design because both preliminary and audited observations come from the same controlled source, monetary unit, reporting scope, and period convention; this assumption is disclosed in the paper.",
-        "7. Line-item mechanisms are named only when mapped lines reconcile materially to aggregate CFI/CFF changes and source-document checks confirm semantic labels.",
+        "1. The expected-CFO coefficients are admissible only when the estimation-population gate passes.",
+        "2. `any_candidate` uses the absolute residual; signed residuals are reserved for directional outcomes.",
+        "3. The nested history model is retained only if it improves EWC on the identical all-model firm-year sample.",
+        "4. Main mechanism claims use the common-primary/core reconciliation outputs, not full-universe contributor tables.",
+        "5. Scale/scope screening is waived by design and disclosed as a maintained source-consistency assumption.",
+        "6. A PDF-manifest row remains evidence-pending until `document_checked=true` and a verification result is recorded.",
     ]
 
     report = output / "CFS_SHIFTING_VALIDATION_REPORT.md"
