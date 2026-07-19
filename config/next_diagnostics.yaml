@@ -23,6 +23,42 @@ decomposition:
   small_lag_assets_quantile: 0.01
   repeated_candidate_min_years: 2
 
+cfs_identity:
+  primary_model: modified_jones
+  primary_benchmark: audited_reference
+  absolute_tolerance_vnd: 1000.0
+  scaled_tolerance: 1.0e-8
+  offset_closure_scaled_tolerance: 1.0e-6
+  material_cfo_threshold: 0.05
+  cfo_to_pat_ratio_threshold: 5.0
+  trim_fraction: 0.01
+
+cfo_tilt:
+  primary_model: modified_jones
+  primary_benchmark: audited_reference
+  cfo_to_pat_ratio_grid: [1.0, 2.0, 5.0, 10.0]
+  reduction_tolerance_grid: [0.0, 0.0025, 0.005, 0.01]
+  trim_fraction: 0.01
+  asset_pre_post_gap_threshold: 0.05
+  asset_growth_multiple_threshold: 5.0
+  small_lag_assets_quantile: 0.01
+  candidate_abs_cfo_threshold: 0.05
+  persistence_cfo_to_pat_threshold: 5.0
+
+component_placebo:
+  models: [jones, modified_jones, kothari, nonlinear_modified_jones]
+  benchmarks: [pre_reference, audited_reference, version_specific]
+  components: [pat, cfo]
+  conditioning_bins:
+    within: [fiscal_year]
+    size_bins: 5
+    abs_da_pre_bins: 5
+    abs_component_bins: 5
+  minimum_stratum_size: 20
+  permutations: 1000
+  trim_fraction: 0.01
+  random_seed: 20260720
+
 sign_transitions:
   sign_epsilon_grid: [0.0, 0.0025, 0.005, 0.01]
   reduction_delta_grid: [0.0, 0.0025, 0.005, 0.01]
