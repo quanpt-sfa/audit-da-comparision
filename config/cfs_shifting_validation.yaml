@@ -106,17 +106,6 @@ cfs_shifting_validation:
       - asset_growth_flag
       - small_lag_assets_flag
 
-  pdf_verification:
-    quotas:
-      cff_down_borrowing: 12
-      cfi_up_ppe: 10
-      cfi_up_loans: 10
-      reconciliation_outliers: 10
-    force_cases:
-      - issuer_ticker: DBT
-        fiscal_year: 2024
-        reason: Prespecified reconciliation exception from the prior diagnostic run
-
   concept_sections:
     cfo_customer_receipts: operating
     cfo_supplier_payments: operating
