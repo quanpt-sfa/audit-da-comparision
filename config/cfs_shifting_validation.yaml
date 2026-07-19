@@ -75,6 +75,11 @@ cfs_shifting_validation:
   sample_restrictions:
     listed_exchanges: [HOSE, HNX, UPCOM]
     lag_assets_floor_quantile: 0.01
+    require_scale_scope_screening: false
+    scale_scope_waiver_reason: >-
+      Source-controlled preliminary and audited records use the same provider,
+      monetary unit, consolidated scope, and reporting-period convention.
+      Comparability is documented in the paper rather than screened empirically.
     scale_scope_flag_columns:
       - combined_scale_scope_flag
       - scale_scope_flag
