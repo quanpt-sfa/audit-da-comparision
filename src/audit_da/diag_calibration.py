@@ -16,7 +16,10 @@ def _metrics(y, mu, sd, student_t_dfs=(3, 5, 10, 30)):
         out = {k: np.nan for k in keys}
         for df in student_t_dfs:
             out[f"mean_student_t_log_score_df{df}"] = np.nan
+        out["best_robust_log_score"] = np.nan
+        out["robust_minus_gaussian_log_score"] = np.nan
         return out
+
     e = y - mu
     den = ((y - y.mean()) ** 2).sum()
     out = dict(
@@ -29,18 +32,29 @@ def _metrics(y, mu, sd, student_t_dfs=(3, 5, 10, 30)):
         coverage95=float((np.abs(e) <= norm.ppf(.975) * sd).mean()),
         mean_predictive_sd=float(sd.mean()),
     )
-    z = e / sd
+
     for df in student_t_dfs:
-        # Scale the Student-t so its variance matches sd^2 when df > 2.
         scale = sd * np.sqrt((df - 2) / df)
-        out[f"mean_student_t_log_score_df{df}"] = float((t.logpdf(e / scale, df=df) - np.log(scale)).mean())
-    out["best_robust_log_score"] = max(out[f"mean_student_t_log_score_df{df}"] for df in student_t_dfs)
-    out["robust_minus_gaussian_log_score"] = out["best_robust_log_score"] - out["mean_log_score"]
+        out[f"mean_student_t_log_score_df{df}"] = float(
+            (t.logpdf(e / scale, df=df) - np.log(scale)).mean()
+        )
+    out["best_robust_log_score"] = max(
+        out[f"mean_student_t_log_score_df{df}"] for df in student_t_dfs
+    )
+    out["robust_minus_gaussian_log_score"] = (
+        out["best_robust_log_score"] - out["mean_log_score"]
+    )
     return out
 
 
 def _bounds(train, cols, lo, hi):
-    return {c: (float(pd.to_numeric(train[c], errors="coerce").quantile(lo)), float(pd.to_numeric(train[c], errors="coerce").quantile(hi))) for c in cols}
+    return {
+        c: (
+            float(pd.to_numeric(train[c], errors="coerce").quantile(lo)),
+            float(pd.to_numeric(train[c], errors="coerce").quantile(hi)),
+        )
+        for c in cols
+    }
 
 
 def _clip(frame, bounds):
@@ -50,11 +64,30 @@ def _clip(frame, bounds):
     return x
 
 
-def rolling_calibration(panel, model_specs, minimum_train_rows, minimum_validation_rows, minimum_test_year,
-                        maximum_test_year, winsor_lower, winsor_upper, random_seed, student_t_dfs=(3, 5, 10, 30)):
+def _within_group_zscore(series: pd.Series) -> pd.Series:
+    numeric = pd.to_numeric(series, errors="coerce")
+    sd = numeric.std(ddof=0)
+    if not np.isfinite(sd) or sd <= 0:
+        return pd.Series(0.0, index=series.index)
+    return (numeric - numeric.mean()) / sd
+
+
+def rolling_calibration(
+    panel,
+    model_specs,
+    minimum_train_rows,
+    minimum_validation_rows,
+    minimum_test_year,
+    maximum_test_year,
+    winsor_lower,
+    winsor_upper,
+    random_seed,
+    student_t_dfs=(3, 5, 10, 30),
+):
     audited = panel[panel.audit_status.eq("audited")].copy()
     features = sorted({f for fs in model_specs.values() for f in fs})
     rows, wr, residual_rows = [], [], []
+
     for year in range(minimum_test_year, maximum_test_year + 1):
         train0 = audited[audited.fiscal_year.le(year - 1)].copy()
         fit0 = audited[audited.fiscal_year.le(year - 2)].copy()
@@ -62,83 +95,194 @@ def rolling_calibration(panel, model_specs, minimum_train_rows, minimum_validati
         test0 = audited[audited.fiscal_year.eq(year)].copy()
         if len(train0) < minimum_train_rows or test0.empty:
             continue
-        b = _bounds(train0, ["ta_scaled"] + features, winsor_lower, winsor_upper)
-        train, fit, val, test = map(lambda z: _clip(z, b), [train0, fit0, val0, test0])
-        vy = val.ta_scaled.to_numpy(float)
-        common = np.isfinite(vy)
-        vp = {}
-        for i, (name, fs) in enumerate(model_specs.items()):
-            s = fit.replace([np.inf, -np.inf], np.nan).dropna(subset=["ta_scaled", "firm_id"] + fs)
-            if len(s) < minimum_train_rows:
-                continue
-            m = ApproxHierarchicalBayes(random_state=random_seed + year * 100 + i).fit(
-                s[fs].to_numpy(float), s.ta_scaled.to_numpy(float), s.firm_id.astype(str).to_numpy(), fs
+
+        bounds = _bounds(train0, ["ta_scaled"] + features, winsor_lower, winsor_upper)
+        train, fit, val, test = map(
+            lambda frame: _clip(frame, bounds),
+            [train0, fit0, val0, test0],
+        )
+
+        validation_y = val.ta_scaled.to_numpy(float)
+        common = np.isfinite(validation_y)
+        validation_predictions = {}
+
+        for i, (name, feature_set) in enumerate(model_specs.items()):
+            feature_set = list(feature_set)
+            subset = fit.replace([np.inf, -np.inf], np.nan).dropna(
+                subset=["ta_scaled", "firm_id"] + feature_set
             )
-            valid = val[fs].replace([np.inf, -np.inf], np.nan).notna().all(axis=1).to_numpy()
+            if len(subset) < minimum_train_rows:
+                continue
+            fitted_model = ApproxHierarchicalBayes(
+                random_state=random_seed + year * 100 + i
+            ).fit(
+                subset[feature_set].to_numpy(float),
+                subset.ta_scaled.to_numpy(float),
+                subset.firm_id.astype(str).to_numpy(),
+                feature_set,
+            )
+            valid = val[feature_set].replace([np.inf, -np.inf], np.nan).notna().all(axis=1).to_numpy()
             common &= valid
-            p = m.posterior_mean_sd(val[fs].fillna(0).to_numpy(float), val.firm_id.astype(str).to_numpy(), True)
-            vp[name] = (p.mean, p.sd)
-        names = [n for n in model_specs if n in vp]
+            prediction = fitted_model.posterior_mean_sd(
+                val[feature_set].fillna(0).to_numpy(float),
+                val.firm_id.astype(str).to_numpy(),
+                True,
+            )
+            validation_predictions[name] = (prediction.mean, prediction.sd)
+
+        names = [name for name in model_specs if name in validation_predictions]
         if not names:
             continue
+
         if common.sum() >= minimum_validation_rows:
-            stack = solve_stacking(vy[common], [vp[n][0][common] for n in names], [vp[n][1][common] for n in names])
-        else:
-            weights = np.repeat(1 / len(names), len(names))
-            from .stacking import StackingResult
-            stack = StackingResult(weights, False, "Insufficient validation rows; equal-weight fallback", np.nan, np.nan, np.nan,
-                                   int(common.sum()), float(np.log(len(names))), float(len(names)))
-        wr += [dict(
-            fiscal_year=year, model=n, weight=float(w), validation_rows=int(common.sum()),
-            optimizer_success=stack.success, optimizer_message=stack.message,
-            stacking_objective=stack.objective, equal_weight_objective=stack.equal_weight_objective,
-            best_single_objective=stack.best_single_objective, weight_entropy=stack.weight_entropy,
-            effective_model_count=stack.effective_model_count,
-        ) for n, w in zip(names, stack.weights)]
-        fitted = {}
-        ok = np.isfinite(test.ta_scaled.to_numpy(float))
-        for i, n in enumerate(names):
-            fs = model_specs[n]
-            s = train.replace([np.inf, -np.inf], np.nan).dropna(subset=["ta_scaled", "firm_id"] + fs)
-            fitted[n] = ApproxHierarchicalBayes(random_state=random_seed + year * 1000 + i).fit(
-                s[fs].to_numpy(float), s.ta_scaled.to_numpy(float), s.firm_id.astype(str).to_numpy(), fs
+            stack = solve_stacking(
+                validation_y[common],
+                [validation_predictions[name][0][common] for name in names],
+                [validation_predictions[name][1][common] for name in names],
             )
-            ok &= test[fs].replace([np.inf, -np.inf], np.nan).notna().all(axis=1).to_numpy()
-        idx = np.flatnonzero(ok)
+        else:
+            from .stacking import StackingResult
+
+            weights = np.repeat(1 / len(names), len(names))
+            stack = StackingResult(
+                weights,
+                False,
+                "Insufficient validation rows; equal-weight fallback",
+                np.nan,
+                np.nan,
+                np.nan,
+                int(common.sum()),
+                float(np.log(len(names))),
+                float(len(names)),
+            )
+
+        wr += [
+            dict(
+                fiscal_year=year,
+                model=name,
+                weight=float(weight),
+                validation_rows=int(common.sum()),
+                optimizer_success=stack.success,
+                optimizer_message=stack.message,
+                stacking_objective=stack.objective,
+                equal_weight_objective=stack.equal_weight_objective,
+                best_single_objective=stack.best_single_objective,
+                weight_entropy=stack.weight_entropy,
+                effective_model_count=stack.effective_model_count,
+            )
+            for name, weight in zip(names, stack.weights)
+        ]
+
+        fitted = {}
+        valid_test = np.isfinite(test.ta_scaled.to_numpy(float))
+        for i, name in enumerate(names):
+            feature_set = list(model_specs[name])
+            subset = train.replace([np.inf, -np.inf], np.nan).dropna(
+                subset=["ta_scaled", "firm_id"] + feature_set
+            )
+            fitted[name] = ApproxHierarchicalBayes(
+                random_state=random_seed + year * 1000 + i
+            ).fit(
+                subset[feature_set].to_numpy(float),
+                subset.ta_scaled.to_numpy(float),
+                subset.firm_id.astype(str).to_numpy(),
+                feature_set,
+            )
+            valid_test &= test[feature_set].replace([np.inf, -np.inf], np.nan).notna().all(axis=1).to_numpy()
+
+        idx = np.flatnonzero(valid_test)
         if not len(idx):
             continue
-        yt = test.iloc[idx].ta_scaled.to_numpy(float)
-        yr = test0.loc[test.index[idx], "ta_scaled"].to_numpy(float)
-        identifiers = test.iloc[idx][[c for c in ["issuer_ticker", "fiscal_year", "raw_exchange", "ta_source"] if c in test.columns]].reset_index(drop=True)
+
+        winsorized_target = test.iloc[idx].ta_scaled.to_numpy(float)
+        raw_target = test0.loc[test.index[idx], "ta_scaled"].to_numpy(float)
+        identifiers = test.iloc[idx][
+            [
+                c
+                for c in ["issuer_ticker", "fiscal_year", "raw_exchange", "ta_source"]
+                if c in test.columns
+            ]
+        ].reset_index(drop=True)
+
         for mode in ["conditional_existing_firm", "marginal_new_firm"]:
-            mus, sds = [], []
-            for n in names:
-                fs = model_specs[n]
-                ids = test.iloc[idx].firm_id.astype(str).to_numpy() if mode.startswith("conditional") else np.repeat("__NEW_FIRM__", len(idx))
-                p = fitted[n].posterior_mean_sd(test.iloc[idx][fs].to_numpy(float), ids, True)
-                mus.append(p.mean); sds.append(p.sd)
-                for tv, y in [("winsorized_target", yt), ("raw_target", yr)]:
-                    rows.append(dict(fiscal_year=year, model=n, prediction_mode=mode, target_variant=tv) | _metrics(y, p.mean, p.sd, student_t_dfs))
-            M = np.vstack(mus).T; S = np.vstack(sds).T
-            mu = (M * stack.weights).sum(1)
-            sd = np.sqrt(np.maximum(((S ** 2 + M ** 2) * stack.weights).sum(1) - mu ** 2, 1e-12))
-            for tv, y in [("winsorized_target", yt), ("raw_target", yr)]:
-                rows.append(dict(fiscal_year=year, model="stacked_ensemble", prediction_mode=mode, target_variant=tv) | _metrics(y, mu, sd, student_t_dfs))
+            means, sds = [], []
+            for name in names:
+                feature_set = list(model_specs[name])
+                firm_ids = (
+                    test.iloc[idx].firm_id.astype(str).to_numpy()
+                    if mode.startswith("conditional")
+                    else np.repeat("__NEW_FIRM__", len(idx))
+                )
+                prediction = fitted[name].posterior_mean_sd(
+                    test.iloc[idx][feature_set].to_numpy(float),
+                    firm_ids,
+                    True,
+                )
+                means.append(prediction.mean)
+                sds.append(prediction.sd)
+                for target_variant, target in [
+                    ("winsorized_target", winsorized_target),
+                    ("raw_target", raw_target),
+                ]:
+                    rows.append(
+                        dict(
+                            fiscal_year=year,
+                            model=name,
+                            prediction_mode=mode,
+                            target_variant=target_variant,
+                        )
+                        | _metrics(target, prediction.mean, prediction.sd, student_t_dfs)
+                    )
+
+            mean_matrix = np.vstack(means).T
+            sd_matrix = np.vstack(sds).T
+            ensemble_mean = (mean_matrix * stack.weights).sum(1)
+            ensemble_sd = np.sqrt(
+                np.maximum(
+                    ((sd_matrix ** 2 + mean_matrix ** 2) * stack.weights).sum(1)
+                    - ensemble_mean ** 2,
+                    1e-12,
+                )
+            )
+
+            for target_variant, target in [
+                ("winsorized_target", winsorized_target),
+                ("raw_target", raw_target),
+            ]:
+                rows.append(
+                    dict(
+                        fiscal_year=year,
+                        model="stacked_ensemble",
+                        prediction_mode=mode,
+                        target_variant=target_variant,
+                    )
+                    | _metrics(target, ensemble_mean, ensemble_sd, student_t_dfs)
+                )
                 residual = identifiers.copy()
                 residual["model"] = "stacked_ensemble"
                 residual["prediction_mode"] = mode
-                residual["target_variant"] = tv
-                residual["target"] = y
-                residual["prediction_mean"] = mu
-                residual["prediction_sd"] = sd
-                residual["residual"] = y - mu
-                residual["standardized_residual"] = (y - mu) / np.maximum(sd, 1e-12)
+                residual["target_variant"] = target_variant
+                residual["target"] = target
+                residual["prediction_mean"] = ensemble_mean
+                residual["prediction_sd"] = ensemble_sd
+                residual["residual"] = target - ensemble_mean
+                residual["standardized_residual"] = (
+                    target - ensemble_mean
+                ) / np.maximum(ensemble_sd, 1e-12)
                 residual_rows.append(residual)
+
     out = pd.DataFrame(rows)
     if not out.empty:
-        for c in ["rmse", "mae", "mean_log_score", "best_robust_log_score"]:
-            out[f"{c}_year_z"] = out.groupby(["model", "prediction_mode", "target_variant"], observed=True)[c].transform(
-                lambda x: (x - x.mean()) / x.std(dof=0) if x.std(ddof=0) > 0 else 0.
-            )
-    residuals = pd.concat(residual_rows, ignore_index=True) if residual_rows else pd.DataFrame()
+        group_columns = ["model", "prediction_mode", "target_variant"]
+        for column in ["rmse", "mae", "mean_log_score", "best_robust_log_score"]:
+            out[f"{column}_year_z"] = out.groupby(
+                group_columns,
+                observed=True,
+            )[column].transform(_within_group_zscore)
+
+    residuals = (
+        pd.concat(residual_rows, ignore_index=True)
+        if residual_rows
+        else pd.DataFrame()
+    )
     return out, pd.DataFrame(wr), residuals
