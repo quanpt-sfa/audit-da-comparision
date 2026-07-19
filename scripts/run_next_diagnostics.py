@@ -53,6 +53,9 @@ def main() -> None:
     scripts = [
         "05_audit_tails_and_ta.py",
         "11_analyze_ta_decomposition.py",
+        "12_analyze_cfs_identity.py",
+        "14_analyze_cfo_tilt.py",
+        "13_analyze_component_placebos.py",
         "06_analyze_sign_transitions.py",
         "07_run_directional_placebos.py",
         "08_analyze_rolling_calibration.py",
