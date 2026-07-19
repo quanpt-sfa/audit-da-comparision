@@ -50,7 +50,7 @@ def _prediction_rows() -> pd.DataFrame:
         "within_year_cfo_percentile",
         "expected_model",
     ]:
-        for ticker, residual in zip(["A", "B", "C", "D"], residuals):
+        for ticker, residual in zip(["AA", "BB", "CC", "DD"], residuals):
             rows.append(
                 {
                     "issuer_ticker": ticker,
@@ -74,7 +74,7 @@ def _prediction_rows() -> pd.DataFrame:
 def _observed_rows() -> pd.DataFrame:
     return pd.DataFrame(
         {
-            "issuer_ticker": ["A", "B", "C", "D"],
+            "issuer_ticker": ["AA", "BB", "CC", "DD"],
             "fiscal_year": [2024] * 4,
             "cfs_resolution": [
                 "identity_consistent_offsetting_reclassification_candidate",
@@ -133,7 +133,7 @@ def test_outcome_specific_scores_use_both_tails() -> None:
 def test_common_sample_removes_model_specific_extra_rows() -> None:
     predictions = _prediction_rows()
     extra = predictions.iloc[[0]].copy()
-    extra["issuer_ticker"] = "E"
+    extra["issuer_ticker"] = "EE"
     extra["proxy_model"] = "expected_model"
     predictions = pd.concat([predictions, extra], ignore_index=True)
     observed = pd.concat(
@@ -141,7 +141,7 @@ def test_common_sample_removes_model_specific_extra_rows() -> None:
             _observed_rows(),
             pd.DataFrame(
                 {
-                    "issuer_ticker": ["E"],
+                    "issuer_ticker": ["EE"],
                     "fiscal_year": [2024],
                     "cfs_resolution": ["identity_consistent_other"],
                     "delta_cfo_scaled": [0.0],
@@ -226,7 +226,7 @@ def test_fold_metrics_include_robust_tail_diagnostics() -> None:
 def test_line_contributors_are_candidate_only() -> None:
     line_items = pd.DataFrame(
         {
-            "issuer_ticker": ["A", "A", "B", "B"],
+            "issuer_ticker": ["AA", "AA", "BB", "BB"],
             "fiscal_year": [2024] * 4,
             "audit_status": ["unaudited", "audited"] * 2,
             "selected_statement_family": ["cash_flow_indirect"] * 4,
@@ -235,7 +235,7 @@ def test_line_contributors_are_candidate_only() -> None:
     )
     observed = pd.DataFrame(
         {
-            "issuer_ticker": ["A", "B"],
+            "issuer_ticker": ["AA", "BB"],
             "fiscal_year": [2024, 2024],
             "cfs_resolution": [
                 "identity_consistent_offsetting_reclassification_candidate",
@@ -252,7 +252,7 @@ def test_line_contributors_are_candidate_only() -> None:
     )
     panel = pd.DataFrame(
         {
-            "issuer_ticker": ["A", "B"],
+            "issuer_ticker": ["AA", "BB"],
             "fiscal_year": [2024, 2024],
             "audit_status": ["audited", "audited"],
             "lag_assets": [100.0, 100.0],
