@@ -7,7 +7,6 @@ import pandas as pd
 
 from _next_diag_common import load_config, resolve
 from audit_da.cfs_completion import (
-    build_pdf_verification_manifest,
     completion_gate_status,
     core_reconciliation_outputs,
     history_incremental_comparison,
@@ -24,15 +23,25 @@ def read_table(output: Path, name: str, required: bool = True) -> pd.DataFrame:
     return pd.DataFrame()
 
 
+def remove_stale_pdf_verification_outputs(output: Path) -> None:
+    """Remove legacy manifest files so prior runs cannot contaminate bundles."""
+    for suffix in (".csv", ".csv.gz"):
+        path = output / f"cfs_pdf_verification_manifest{suffix}"
+        if path.exists():
+            path.unlink()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Complete the remaining CFS validation and verification gates"
+        description="Complete the remaining executable CFS validation gates"
     )
     parser.add_argument("--config", default="config/cfs_shifting_validation.yaml")
     args = parser.parse_args()
     config_path, config = load_config(args.config)
     output = resolve(config_path, config["paths"]["output_dir"])
     settings = dict(config["cfs_shifting_validation"])
+
+    remove_stale_pdf_verification_outputs(output)
 
     panel = pd.read_csv(
         resolve(config_path, config["paths"]["panel_input"]), low_memory=False
@@ -70,15 +79,10 @@ def main() -> None:
         "cfs_line_item_reconciliation_cases_common_primary_core",
         pd.DataFrame(),
     )
-    manifest = build_pdf_verification_manifest(
-        primary_reconciliation, settings
-    )
-    tables["cfs_pdf_verification_manifest"] = manifest
     tables["cfs_completion_gate_status"] = completion_gate_status(
         estimation_status,
         history,
         primary_reconciliation,
-        manifest,
     )
     write_tables(tables, output)
 
