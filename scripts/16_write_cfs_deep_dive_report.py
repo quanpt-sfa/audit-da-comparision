@@ -36,6 +36,9 @@ def main() -> None:
     incentive = maybe_read(output, "cfs_incentive_descriptives")
     models = maybe_read(output, "cfs_incentive_models")
     anchors = maybe_read(output, "component_anchor_common_sample")
+    uncertainty_year = maybe_read(output, "cfs_payoff_uncertainty_by_year")
+    uncertainty_bin = maybe_read(output, "cfs_payoff_by_uncertainty_bin")
+    uncertainty_corr = maybe_read(output, "cfs_payoff_uncertainty_correlations")
     audit_status = maybe_read(output, "audit_quality_status")
     audit_summary = maybe_read(output, "audit_quality_summary")
     verification = maybe_read(output, "cfs_pdf_verification_sample")
@@ -48,6 +51,7 @@ def main() -> None:
         "- Algebraically consistent offsetting movements are reclassification candidates; semantic verification still requires source-document checks.",
         "- A two-sided CFO adjustment distribution is evidence against a universal upward-window-dressing story, not evidence that no incentive-driven subset exists.",
         "- Common-sample anchor comparisons are the primary targeting-versus-de-noising diagnostic.",
+        "- A relation between payoff and model dispersion is descriptive evidence of benchmark dependence, not a causal estimate of audit quality.",
         "- Big4 and audit-opinion results are reported only when an external metadata file joins successfully.",
         "",
     ]
@@ -83,6 +87,27 @@ def main() -> None:
         lines += ["## Firm-clustered incentive models", "", core.to_markdown(index=False), ""]
     if not anchors.empty:
         lines += ["## Same-firm-year anchor comparison", "", anchors.to_markdown(index=False), ""]
+    if not uncertainty_year.empty:
+        lines += [
+            "## Reclassification payoff and measurement uncertainty by year",
+            "",
+            uncertainty_year.to_markdown(index=False),
+            "",
+        ]
+    if not uncertainty_bin.empty:
+        lines += [
+            "## Candidate payoff across uncertainty bins",
+            "",
+            uncertainty_bin.to_markdown(index=False),
+            "",
+        ]
+    if not uncertainty_corr.empty:
+        lines += [
+            "## Year-specific payoff correlations",
+            "",
+            uncertainty_corr.to_markdown(index=False),
+            "",
+        ]
     if not audit_status.empty:
         lines += ["## Audit-quality metadata status", "", audit_status.to_markdown(index=False), ""]
     if not audit_summary.empty:
@@ -105,7 +130,8 @@ def main() -> None:
         "2. Bidirectional chronicity supports a stable reporting-process or classification-policy problem; persistent audited CFO decreases support a window-dressing subset.",
         "3. Distress and near-zero-CFO coefficients must predict audited CFO decreases, not merely candidate incidence, before claiming incentive-driven inflation.",
         "4. The targeting claim remains rejected if CFO movement is positive only on the cash-flow anchor and non-positive on the balance-sheet anchor within the identical complete-case sample.",
-        "5. Big4/opinion associations are descriptive until client selection and pre-audit reporting quality are addressed.",
+        "5. A falling payoff with rising cross-specification dispersion supports benchmark contamination of the measured audit effect; a flat relationship points instead to a real change in the underlying reporting transition.",
+        "6. Big4/opinion associations are descriptive until client selection and pre-audit reporting quality are addressed.",
     ]
 
     report = output / "CFS_DEEP_DIVE_REPORT.md"
