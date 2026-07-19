@@ -24,6 +24,7 @@ def _normalise_text(value: Any) -> str:
     text = "" if value is None else str(value)
     text = unicodedata.normalize("NFKD", text)
     text = "".join(ch for ch in text if not unicodedata.combining(ch))
+    text = text.replace("đ", "d").replace("Đ", "D")
     return re.sub(r"\s+", " ", text.lower()).strip()
 
 
