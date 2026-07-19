@@ -44,6 +44,14 @@ python scripts/run_pipeline.py \
   --input /path/to/financial_statement_full_long.csv.zip
 ```
 
+`--input` must point to a file (`.zip`, `.csv`, or `.csv.gz`), not a folder.
+
+Windows example:
+
+```powershell
+python .\scripts\run_pipeline.py --input data\raw\financial_statement_full_long.csv.gz
+```
+
 Individual stages:
 
 ```bash
@@ -52,6 +60,8 @@ python scripts/01_build_panel.py --input /path/to/file.zip
 python scripts/02_run_signal_gate.py
 python scripts/03_run_baselines.py
 ```
+
+For `00_profile_input.py` and `01_build_panel.py`, `--input` also must be a file path (`.zip`, `.csv`, or `.csv.gz`).
 
 ## Tests
 
