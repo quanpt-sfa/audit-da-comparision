@@ -28,7 +28,11 @@ def main() -> None:
     config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
 
     required_keys = ["raw_input", "panel_input"]
-    if config.get("cfs_shifting_validation", {}).get("industry_mapping", {}).get("required", False):
+    if (
+        config.get("cfs_shifting_validation", {})
+        .get("industry_mapping", {})
+        .get("required", False)
+    ):
         required_keys.append("industry_input")
     for key in required_keys:
         if key not in config.get("paths", {}):
@@ -45,7 +49,8 @@ def main() -> None:
         output / f"{upstream_name}.csv.gz"
     ).exists():
         raise FileNotFoundError(
-            f"Observed CFS cases are missing from {output}. Run the CFS deep-dive diagnostics first."
+            f"Observed CFS cases are missing from {output}. "
+            "Run the CFS deep-dive diagnostics first."
         )
 
     env = os.environ.copy()
@@ -56,6 +61,7 @@ def main() -> None:
     for script in [
         "18_inventory_cfs_items.py",
         "19_validate_cfs_shifting_proxies.py",
+        "21_complete_cfs_validation_gates.py",
         "20_write_cfs_shifting_validation_report.py",
     ]:
         command = [

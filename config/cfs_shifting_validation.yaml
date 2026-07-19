@@ -38,11 +38,22 @@ cfs_shifting_validation:
     financial_industry_values: ['Tài chính', 'Ngân hàng']
     missing_industry_is_unknown: true
 
+  # Apply these restrictions before constructing firm history and before every
+  # rolling-fold fit/test. This prevents financial firms from contaminating the
+  # expected-CFO coefficients used for the non-financial research population.
+  estimation_sample:
+    require_nonfinancial: true
+    require_listed: true
+    listed_exchanges: [HOSE, HNX, UPCOM]
+    require_valid_ticker: true
+    require_positive_lag_assets: true
+
   proxy_models:
     sales_level_only: [inv_assets, pre_revenue_scaled]
     roychowdhury_sales: [inv_assets, pre_revenue_scaled, pre_drev_scaled]
     earnings_conditioned: [inv_assets, pre_revenue_scaled, pre_drev_scaled, pre_pat_scaled]
     earnings_working_capital: [inv_assets, pre_pat_scaled, pre_drev_scaled, pre_drec_scaled, pre_loss]
+    earnings_working_capital_history: [inv_assets, pre_pat_scaled, pre_drev_scaled, pre_drec_scaled, pre_loss, firm_prior_cfo_median]
 
   # Primary comparison excludes firm-history because its first observation per issuer is unavailable.
   common_primary_models:
@@ -53,15 +64,23 @@ cfs_shifting_validation:
     - raw_cfo_level
     - within_year_cfo_percentile
 
-  # All-model comparison quantifies the sample cost of requiring firm-history deviation.
+  # All-model comparison quantifies the sample cost and incremental value of
+  # both the standalone history score and the nested EWC+history model.
   common_all_models:
     - sales_level_only
     - roychowdhury_sales
     - earnings_conditioned
     - earnings_working_capital
+    - earnings_working_capital_history
     - raw_cfo_level
     - within_year_cfo_percentile
     - firm_history_deviation
+
+  history_nested_comparison:
+    base_model: earnings_working_capital
+    nested_model: earnings_working_capital_history
+    sample_mode: common_all_models
+    sample_restriction: analysis_core
 
   # Backward-compatible alias used only by older scripts.
   common_sample_models:
@@ -86,6 +105,17 @@ cfs_shifting_validation:
       - asset_pre_post_gap_flag
       - asset_growth_flag
       - small_lag_assets_flag
+
+  pdf_verification:
+    quotas:
+      cff_down_borrowing: 12
+      cfi_up_ppe: 10
+      cfi_up_loans: 10
+      reconciliation_outliers: 10
+    force_cases:
+      - issuer_ticker: DBT
+        fiscal_year: 2024
+        reason: Prespecified reconciliation exception from the prior diagnostic run
 
   concept_sections:
     cfo_customer_receipts: operating
