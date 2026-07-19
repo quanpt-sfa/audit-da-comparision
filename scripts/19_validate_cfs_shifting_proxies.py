@@ -6,6 +6,10 @@ from pathlib import Path
 import pandas as pd
 
 from _next_diag_common import load_config, resolve
+from audit_da.cfs_completion import (
+    restrict_estimation_panel,
+    restrict_to_estimation_keys,
+)
 from audit_da.diag_common import write_tables
 from audit_da.diag_cfs_proxy_validation import run_cfs_shifting_validation
 from audit_da.icb_industry import attach_icb_industry, load_icb_industry
@@ -23,26 +27,41 @@ def read_table(output: Path, name: str) -> pd.DataFrame:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Validate inferred cash-flow shifting proxies against observed pre/post reclassifications"
+        description=(
+            "Validate inferred cash-flow shifting proxies against observed "
+            "pre/post reclassifications"
+        )
     )
     parser.add_argument("--config", default="config/cfs_shifting_validation.yaml")
     args = parser.parse_args()
     config_path, config = load_config(args.config)
     output = resolve(config_path, config["paths"]["output_dir"])
     settings = dict(config["cfs_shifting_validation"])
-    panel = pd.read_csv(resolve(config_path, config["paths"]["panel_input"]), low_memory=False)
+    panel = pd.read_csv(
+        resolve(config_path, config["paths"]["panel_input"]), low_memory=False
+    )
 
     auxiliary: dict[str, pd.DataFrame] = {}
     industry_value = config.get("paths", {}).get("industry_input")
     if industry_value:
         industry_path = resolve(config_path, industry_value)
-        require_industry = bool(settings.get("industry_mapping", {}).get("required", True))
+        require_industry = bool(
+            settings.get("industry_mapping", {}).get("required", True)
+        )
         if not industry_path.exists():
             if require_industry:
-                raise FileNotFoundError(f"Required ICB industry file not found: {industry_path}")
-            auxiliary["cfs_industry_mapping_status"] = pd.DataFrame([
-                {"industry_path": str(industry_path), "status": "NOT_EVALUATED", "reason": "File not found"}
-            ])
+                raise FileNotFoundError(
+                    f"Required ICB industry file not found: {industry_path}"
+                )
+            auxiliary["cfs_industry_mapping_status"] = pd.DataFrame(
+                [
+                    {
+                        "industry_path": str(industry_path),
+                        "status": "NOT_EVALUATED",
+                        "reason": "File not found",
+                    }
+                ]
+            )
         else:
             mapping, load_status = load_icb_industry(
                 industry_path,
@@ -55,12 +74,27 @@ def main() -> None:
             )
             auxiliary["cfs_industry_unmatched_tickers"] = unmatched
 
+    estimation_panel, estimation_status = restrict_estimation_panel(panel, settings)
+    auxiliary["cfs_expected_cfo_estimation_sample_status"] = estimation_status
+
     cases = read_table(
         output,
-        config.get("upstream", {}).get("observed_cases_table", "cfs_offset_channel_cases"),
+        config.get("upstream", {}).get(
+            "observed_cases_table", "cfs_offset_channel_cases"
+        ),
     )
     line_items = read_table(output, "cfs_line_item_panel")
-    tables = run_cfs_shifting_validation(panel, cases, line_items, settings)
+
+    # Use the identical issuer-year population for fitting, prediction,
+    # validation, and detailed line-item reconciliation. This prevents
+    # financial or unknown-industry observations from leaking back through an
+    # upstream outcome or line-item table.
+    cases = restrict_to_estimation_keys(cases, estimation_panel)
+    line_items = restrict_to_estimation_keys(line_items, estimation_panel)
+
+    tables = run_cfs_shifting_validation(
+        estimation_panel, cases, line_items, settings
+    )
     tables.update(auxiliary)
     write_tables(tables, output)
 
