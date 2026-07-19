@@ -207,11 +207,13 @@ def load_icb_industry(
                 financial.loc[code_known & financial.isna()] = False
                 financial_source += f"; code prefixes from {code_column}"
 
+    if not bool(settings.get("missing_industry_is_unknown", True)):
+        financial = financial.fillna(False)
     output["financial_flag"] = financial
+
     output = output[
         output["issuer_ticker"].notna() & output["issuer_ticker"].ne("")
     ].copy()
-
     keys = ["issuer_ticker"] + (
         ["fiscal_year"] if "fiscal_year" in output.columns else []
     )
