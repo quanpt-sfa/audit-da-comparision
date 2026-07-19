@@ -15,6 +15,16 @@ def _numeric(frame: pd.DataFrame, column: str) -> pd.Series:
     return pd.to_numeric(frame[column], errors="coerce")
 
 
+def _finite_median(values: pd.Series, absolute: bool = False) -> float:
+    numeric = pd.to_numeric(pd.Series(values), errors="coerce").to_numpy(float)
+    numeric = numeric[np.isfinite(numeric)]
+    if not len(numeric):
+        return np.nan
+    if absolute:
+        numeric = np.abs(numeric)
+    return float(np.median(numeric))
+
+
 def _aggregate_contributors(
     contribution: pd.DataFrame,
     group_columns: list[str],
@@ -167,9 +177,12 @@ def line_item_reconciliation(
             median_mapped_concepts=("mapped_concepts_available", "median"),
             median_abs_reconciliation_residual=(
                 "reconciliation_residual_scaled",
-                lambda x: float(pd.Series(x).abs().median()),
+                lambda x: _finite_median(x, absolute=True),
             ),
-            median_mapped_share=("mapped_share_of_aggregate", "median"),
+            median_mapped_share=(
+                "mapped_share_of_aggregate",
+                lambda x: _finite_median(x),
+            ),
             share_mapped_within_80_120pct=(
                 "mapped_share_within_80_120pct",
                 "mean",
