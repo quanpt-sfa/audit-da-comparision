@@ -114,17 +114,15 @@ def test_primary_and_all_model_common_samples_are_both_reported() -> None:
             "offset_channel_pattern": ["cff_dominant", "cfi_dominant"],
         }
     )
+    primary_models = [
+        "sales_level_only", "roychowdhury_sales", "earnings_conditioned",
+        "earnings_working_capital", "raw_cfo_level", "within_year_cfo_percentile",
+    ]
+    all_model_names = primary_models + ["firm_history_deviation"]
     settings = {
         "material_cfo_threshold": 0.05,
-        "common_primary_models": [
-            "sales_level_only", "roychowdhury_sales", "earnings_conditioned",
-            "earnings_working_capital", "raw_cfo_level", "within_year_cfo_percentile",
-        ],
-        "common_all_models": [
-            "sales_level_only", "roychowdhury_sales", "earnings_conditioned",
-            "earnings_working_capital", "raw_cfo_level", "within_year_cfo_percentile",
-            "firm_history_deviation",
-        ],
+        "common_primary_models": primary_models,
+        "common_all_models": all_model_names,
         "sample_restrictions": {
             "listed_exchanges": ["HOSE"],
             "lag_assets_floor_quantile": 0.0,
@@ -139,3 +137,10 @@ def test_primary_and_all_model_common_samples_are_both_reported() -> None:
     all_models = tables["cfs_shifting_proxy_common_all_core_cases"]
     assert primary[["issuer_ticker", "fiscal_year"]].drop_duplicates().shape[0] == 2
     assert all_models[["issuer_ticker", "fiscal_year"]].drop_duplicates().shape[0] == 1
+    assert set(primary["proxy_model"].unique()) == set(primary_models)
+    assert "firm_history_deviation" not in set(primary["proxy_model"])
+    assert set(all_models["proxy_model"].unique()) == set(all_model_names)
+
+    comparison = tables["cfs_common_sample_metric_comparison"]
+    assert not comparison.empty
+    assert (comparison["firm_year_rows_lost"] >= 0).all()
