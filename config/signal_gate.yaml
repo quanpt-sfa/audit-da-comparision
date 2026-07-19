@@ -37,6 +37,12 @@ items:
   depreciation: cash_flow_indirect__2_khau_hao_tscd_va_bdsdt_gt
   cfo_indirect: cash_flow_indirect__i_luu_chuyen_tien_thuan_tu_hoat_dong_kinh_doanh_gt
   cfo_direct: cash_flow_direct__i_luu_chuyen_tien_te_rong_tu_cac_hoat_dong_san_xuat_kinh_doanh_tt
+  cfi: cash_flow_indirect__ii_luu_chuyen_tien_thuan_tu_hoat_dong_dau_tu_gt
+  cff: cash_flow_indirect__iii_luu_chuyen_tien_thuan_tu_hoat_dong_tai_chinh_gt
+  net_cash_change: cash_flow_indirect__iv_luu_chuyen_tien_thuan_trong_ky_gt
+  cash_begin_cfs: cash_flow_indirect__v_tien_va_tuong_duong_tien_dau_ky_gt
+  fx_effect: cash_flow_indirect__vi_anh_huong_cua_chenh_lech_ty_gia_gt
+  cash_end_cfs: cash_flow_indirect__vii_tien_va_tuong_duong_tien_cuoi_ky_gt
 
 panel:
   primary_total_accruals: cash_flow
