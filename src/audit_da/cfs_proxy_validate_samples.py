@@ -119,7 +119,7 @@ def _sample_masks(
 def _mode_definitions(
     merged: pd.DataFrame,
     settings: dict[str, Any],
-) -> tuple[dict[str, pd.Series], pd.DataFrame]:
+) -> tuple[dict[str, pd.Series], dict[str, list[str] | None], pd.DataFrame]:
     primary_models = list(
         settings.get(
             "common_primary_models",
@@ -132,7 +132,8 @@ def _mode_definitions(
             primary_models + ["firm_history_deviation"],
         )
     )
-    definitions = {
+    definitions: dict[str, list[str] | None] = {
+        "model_available": None,
         "common_primary_models": primary_models,
         "common_all_models": all_models,
     }
@@ -150,7 +151,8 @@ def _mode_definitions(
         }
     ]
     total_keys = max(merged[KEYS].drop_duplicates().shape[0], 1)
-    for mode, models in definitions.items():
+    for mode in ["common_primary_models", "common_all_models"]:
+        models = definitions[mode] or []
         common = _common_keys(merged, models)
         masks[mode] = pd.Series(key_index.isin(common), index=merged.index)
         status_rows.append(
@@ -162,7 +164,25 @@ def _mode_definitions(
                 "coverage_vs_all_firm_years": len(common) / total_keys,
             }
         )
-    return masks, pd.DataFrame(status_rows)
+    return masks, definitions, pd.DataFrame(status_rows)
+
+
+def _common_mode_comparison(summary: pd.DataFrame) -> pd.DataFrame:
+    if summary.empty:
+        return pd.DataFrame()
+    primary = summary[summary["sample_mode"].eq("common_primary_models")].copy()
+    all_models = summary[summary["sample_mode"].eq("common_all_models")].copy()
+    keys = ["proxy_model", "outcome", "sample_restriction"]
+    metrics = ["rows", "positives", "prevalence", "auc", "average_precision", "top_decile_lift"]
+    primary = primary[keys + metrics].rename(columns={column: f"primary_{column}" for column in metrics})
+    all_models = all_models[keys + metrics].rename(columns={column: f"all_models_{column}" for column in metrics})
+    comparison = primary.merge(all_models, on=keys, how="outer", validate="one_to_one")
+    comparison["firm_year_rows_lost"] = comparison["primary_rows"] - comparison["all_models_rows"]
+    comparison["coverage_ratio_all_vs_primary"] = comparison["all_models_rows"] / comparison["primary_rows"]
+    comparison["delta_auc_all_minus_primary"] = comparison["all_models_auc"] - comparison["primary_auc"]
+    comparison["delta_ap_all_minus_primary"] = comparison["all_models_average_precision"] - comparison["primary_average_precision"]
+    comparison["delta_lift_all_minus_primary"] = comparison["all_models_top_decile_lift"] - comparison["primary_top_decile_lift"]
+    return comparison
 
 
 def validate_proxy_predictions_dual_common(
@@ -191,7 +211,7 @@ def validate_proxy_predictions_dual_common(
     )
 
     restriction_masks, restriction_status = _sample_masks(merged, settings)
-    mode_masks, mode_status = _mode_definitions(merged, settings)
+    mode_masks, mode_models, mode_status = _mode_definitions(merged, settings)
 
     summary: list[dict[str, Any]] = []
     yearly: list[dict[str, Any]] = []
@@ -201,6 +221,9 @@ def validate_proxy_predictions_dual_common(
     for restriction_name, restriction_mask in restriction_masks.items():
         for mode_name, mode_mask in mode_masks.items():
             sample = merged.loc[restriction_mask & mode_mask].copy()
+            required_models = mode_models[mode_name]
+            if required_models is not None:
+                sample = sample[sample["proxy_model"].isin(required_models)]
             if sample.empty:
                 continue
             for _, group in sample.groupby("proxy_model", observed=True):
@@ -254,6 +277,7 @@ def validate_proxy_predictions_dual_common(
         "cfs_shifting_proxy_incremental_comparison": incremental,
         "cfs_proxy_sample_restriction_status": restriction_status,
         "cfs_common_sample_status": mode_status,
+        "cfs_common_sample_metric_comparison": _common_mode_comparison(summary_frame),
         "cfs_shifting_proxy_common_core_cases": primary_frame,
         "cfs_shifting_proxy_common_primary_core_cases": primary_frame,
         "cfs_shifting_proxy_common_all_core_cases": all_frame,
