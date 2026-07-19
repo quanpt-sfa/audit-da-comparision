@@ -62,7 +62,9 @@ def main() -> None:
         "18_inventory_cfs_items.py",
         "19_validate_cfs_shifting_proxies.py",
         "21_complete_cfs_validation_gates.py",
+        "22_analyze_auditor_regime.py",
         "20_write_cfs_shifting_validation_report.py",
+        "23_write_auditor_regime_report.py",
     ]:
         command = [
             sys.executable,
