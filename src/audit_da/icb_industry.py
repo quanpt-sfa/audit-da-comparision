@@ -90,22 +90,22 @@ def load_icb_industry(
     code_column = _find_column(normalised, code_candidates)
 
     output = pd.DataFrame(index=raw.index)
-    output["issuer_ticker"] = (
-        raw[ticker_column].fillna("").astype(str).str.strip().str.upper()
-    )
+    output["issuer_ticker"] = raw[ticker_column].fillna("").astype(str).str.strip().str.upper()
     output["issuer_ticker"] = output["issuer_ticker"].str.replace(
         r"\.(HO|HN|UPCOM)$", "", regex=True
     )
     if year_column is not None:
         output["fiscal_year"] = pd.to_numeric(raw[year_column], errors="coerce").astype("Int64")
-    if industry_column is not None:
-        output["industry_name"] = raw[industry_column].astype("string")
-    else:
-        output["industry_name"] = pd.Series(pd.NA, index=raw.index, dtype="string")
-    if code_column is not None:
-        output["icb_industry_code"] = raw[code_column].astype("string")
-    else:
-        output["icb_industry_code"] = pd.Series(pd.NA, index=raw.index, dtype="string")
+    output["industry_name"] = (
+        raw[industry_column].astype("string")
+        if industry_column is not None
+        else pd.Series(pd.NA, index=raw.index, dtype="string")
+    )
+    output["icb_industry_code"] = (
+        raw[code_column].astype("string")
+        if code_column is not None
+        else pd.Series(pd.NA, index=raw.index, dtype="string")
+    )
 
     if explicit_flag is not None:
         financial = _truthy(raw[explicit_flag])
@@ -115,11 +115,17 @@ def load_icb_industry(
             "financial_industry_regex",
             r"financial|bank|insurance|securit|tai chinh|ngan hang|bao hiem|chung khoan",
         )
-        names = output["industry_name"].fillna("").astype(str).map(_normalise_label)
+        names = (
+            output["industry_name"]
+            .fillna("")
+            .astype(str)
+            .map(_normalise_label)
+            .str.replace("_", " ", regex=False)
+        )
         financial = names.str.contains(pattern, regex=True, na=False)
         prefixes = tuple(str(x) for x in settings.get("financial_icb_prefixes", ["8"]))
         codes = output["icb_industry_code"].fillna("").astype(str).str.replace(r"\.0$", "", regex=True)
-        if prefixes:
+        if prefixes and code_column is not None:
             financial |= codes.str.startswith(prefixes)
         financial_source = "industry_name/icb_code"
     output["financial_flag"] = financial.astype(bool)
