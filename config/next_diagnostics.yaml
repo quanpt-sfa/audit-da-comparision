@@ -2,6 +2,7 @@ paths:
   baseline_input: artifacts/ols_baselines.csv.gz
   panel_input: data/processed/accrual_panel.csv.gz
   output_dir: artifacts/next_diagnostics
+  audit_metadata_input: data/processed/audit_metadata.csv
 
 data:
   audited_label: audited
@@ -58,6 +59,45 @@ component_placebo:
   permutations: 1000
   trim_fraction: 0.01
   random_seed: 20260720
+
+cfs_deep_dive:
+  minimum_year: 2018
+  candidate_label: identity_consistent_offsetting_reclassification_candidate
+  direction_tolerance: 0.0
+  dominant_offset_share_threshold: 0.60
+  trim_fraction: 0.01
+  chronic_min_candidate_years: 4
+  chronic_candidate_share: 0.75
+  direction_consistency_threshold: 0.80
+  material_cfo_threshold: 0.05
+  near_zero_cfo_threshold: 0.01
+  current_ratio_threshold: 1.0
+  low_cash_threshold: 0.02
+  unaudited_label: unaudited
+  pdf_sample_size: 40
+  pdf_fail_to_pass_quota: 5
+  pdf_insufficient_quota: 5
+  random_seed: 20260720
+  audit_metadata:
+    auditor_column: auditor_name
+    opinion_column: audit_opinion
+    big4_patterns:
+      - deloitte
+      - kpmg
+      - ernst
+      - ey
+      - pricewaterhouse
+      - pwc
+    nonclean_patterns:
+      - qualified
+      - adverse
+      - disclaimer
+      - except for
+      - going concern
+      - ngoại trừ
+      - không chấp nhận
+      - từ chối
+      - hoạt động liên tục
 
 sign_transitions:
   sign_epsilon_grid: [0.0, 0.0025, 0.005, 0.01]
