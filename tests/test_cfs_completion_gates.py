@@ -3,7 +3,7 @@ from __future__ import annotations
 import pandas as pd
 
 from audit_da.cfs_completion import (
-    build_pdf_verification_manifest,
+    completion_gate_status,
     core_reconciliation_outputs,
     history_incremental_comparison,
     restrict_estimation_panel,
@@ -75,74 +75,6 @@ def test_history_nested_comparison_uses_identical_common_all_sample() -> None:
     assert round(comparison.loc[0, "delta_ap_nested_minus_base"], 6) == 0.02
 
 
-def _reconciliation_cases() -> pd.DataFrame:
-    return pd.DataFrame(
-        {
-            "issuer_ticker": ["DBT", "AAA", "BBB", "CCC"],
-            "fiscal_year": [2024, 2024, 2024, 2024],
-            "section": ["financing", "financing", "investing", "investing"],
-            "cfs_resolution": [
-                "identity_consistent_offsetting_reclassification_candidate"
-            ]
-            * 4,
-            "offset_channel_pattern": [
-                "cff_dominant",
-                "cff_dominant",
-                "cfi_dominant",
-                "cfi_dominant",
-            ],
-            "cfo_adjustment_direction": [
-                "audited_cfo_increase",
-                "audited_cfo_decrease",
-                "audited_cfo_increase",
-                "audited_cfo_increase",
-            ],
-            "aggregate_section_change_scaled": [0.2, 0.3, -0.2, -0.15],
-            "mapped_line_change_sum_scaled": [0.7, 0.3, -0.2, -0.15],
-            "reconciliation_residual_scaled": [0.5, 0.0, 0.0, 0.0],
-            "mapped_share_of_aggregate": [3.5, 1.0, 1.0, 1.0],
-            "mapped_share_within_80_120pct": [False, True, True, True],
-            "mapped_concepts_available": [3, 3, 3, 3],
-            "dominant_line_item": [
-                "cff_borrowing_proceeds",
-                "cff_borrowing_proceeds",
-                "cfi_ppe_purchase",
-                "cfi_loans_advanced",
-            ],
-            "dominant_line_item_change_scaled": [0.7, 0.3, -0.2, -0.15],
-        }
-    )
-
-
-def test_pdf_manifest_contains_forced_and_mechanism_cases() -> None:
-    manifest = build_pdf_verification_manifest(
-        _reconciliation_cases(),
-        {
-            "candidate_label": "identity_consistent_offsetting_reclassification_candidate",
-            "pdf_verification": {
-                "quotas": {
-                    "cff_down_borrowing": 2,
-                    "cfi_up_ppe": 2,
-                    "cfi_up_loans": 2,
-                    "reconciliation_outliers": 2,
-                },
-                "force_cases": [
-                    {
-                        "issuer_ticker": "DBT",
-                        "fiscal_year": 2024,
-                        "reason": "forced",
-                    }
-                ],
-            },
-        },
-    )
-    assert set(["DBT", "AAA", "BBB", "CCC"]).issubset(
-        set(manifest["issuer_ticker"])
-    )
-    assert manifest.loc[manifest["issuer_ticker"].eq("DBT"), "verification_priority"].min() == 0
-    assert (manifest["verification_result"] == "PENDING").all()
-
-
 def test_core_reconciliation_uses_only_common_primary_keys() -> None:
     line_items = pd.DataFrame(
         {
@@ -201,3 +133,18 @@ def test_core_reconciliation_uses_only_common_primary_keys() -> None:
     ]
     assert cases["issuer_ticker"].nunique() == 1
     assert cases["issuer_ticker"].iloc[0] == "AAA"
+
+
+def test_completion_status_has_no_pdf_verification_gate() -> None:
+    status = completion_gate_status(
+        pd.DataFrame([{"status": "EVALUATED"}]),
+        pd.DataFrame([{"outcome": "any_candidate"}]),
+        pd.DataFrame([{"issuer_ticker": "AAA", "fiscal_year": 2024}]),
+    )
+    assert "pdf_verification_manifest" not in set(status["gate"])
+    assert set(status["gate"]) == {
+        "nonfinancial_estimation_sample",
+        "nested_history_incremental_test",
+        "common_primary_core_reconciliation",
+        "scale_scope_screening",
+    }
