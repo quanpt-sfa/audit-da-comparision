@@ -1,0 +1,109 @@
+paths:
+  raw_input: data/raw/financial_statement_full_long.csv.gz
+  panel_input: data/processed/accrual_panel.csv.gz
+  output_dir: artifacts/next_diagnostics
+
+upstream:
+  observed_cases_table: cfs_offset_channel_cases
+
+cfs_shifting_validation:
+  audited_label: audited
+  unaudited_label: unaudited
+  required_scope: consolidated
+  allowed_identity_status: [exact, casefold_match]
+  statement_family_regex: 'cash[_ ]?flow'
+  statement_family_preference: [cash_flow_indirect, cash_flow_direct]
+  chunksize: 250000
+  minimum_year: 2018
+  maximum_year: 2025
+  minimum_test_year: 2018
+  maximum_test_year: 2025
+  minimum_train_rows: 500
+  ridge: 1.0e-8
+  material_cfo_threshold: 0.05
+  candidate_label: identity_consistent_offsetting_reclassification_candidate
+
+  proxy_models:
+    roychowdhury_sales: [inv_assets, pre_revenue_scaled, pre_drev_scaled]
+    earnings_conditioned: [inv_assets, pre_revenue_scaled, pre_drev_scaled, pre_pat_scaled]
+    earnings_working_capital: [inv_assets, pre_pat_scaled, pre_drev_scaled, pre_drec_scaled, pre_loss]
+
+  concept_sections:
+    cfo_customer_receipts: operating
+    cfo_supplier_payments: operating
+    cfo_employee_payments: operating
+    cfo_interest_paid: operating
+    cfo_income_tax_paid: operating
+    cfo_other_receipts: operating
+    cfo_other_payments: operating
+    cfi_ppe_purchase: investing
+    cfi_ppe_sale: investing
+    cfi_loans_advanced: investing
+    cfi_loans_collected: investing
+    cfi_investment_purchase: investing
+    cfi_investment_sale: investing
+    cfi_interest_dividends_received: investing
+    cff_borrowing_proceeds: financing
+    cff_debt_repayments: financing
+    cff_owner_contributions: financing
+    cff_share_repurchases: financing
+    cff_dividends_paid: financing
+
+  line_item_rules:
+    - concept: cfo_customer_receipts
+      section: operating
+      include: ['(tien[_ ]thu|thu[_ ]tien).*(ban[_ ]hang|cung[_ ]cap[_ ]dich[_ ]vu|doanh[_ ]thu)']
+    - concept: cfo_supplier_payments
+      section: operating
+      include: ['(tien[_ ]chi|chi[_ ]tien).*(nguoi[_ ]cung[_ ]cap|mua[_ ]hang[_ ]hoa|mua[_ ]dich[_ ]vu)']
+    - concept: cfo_employee_payments
+      section: operating
+      include: ['(tien[_ ]chi|chi[_ ]tien).*(nguoi[_ ]lao[_ ]dong|nhan[_ ]vien)']
+    - concept: cfo_interest_paid
+      section: operating
+      include: ['lai[_ ]vay.*(da[_ ]tra|chi[_ ]tra|tra)']
+    - concept: cfo_income_tax_paid
+      section: operating
+      include: ['thue[_ ]thu[_ ]nhap[_ ]doanh[_ ]nghiep.*(da[_ ]nop|chi[_ ]tra|nop)']
+    - concept: cfo_other_receipts
+      section: operating
+      include: ['(tien[_ ]thu|thu[_ ]tien).*khac.*hoat[_ ]dong.*kinh[_ ]doanh']
+    - concept: cfo_other_payments
+      section: operating
+      include: ['(tien[_ ]chi|chi[_ ]tien).*khac.*hoat[_ ]dong.*kinh[_ ]doanh']
+    - concept: cfi_ppe_purchase
+      section: investing
+      include: ['(tien[_ ]chi|chi[_ ]tien).*(mua[_ ]sam|xay[_ ]dung).*(tscd|tai[_ ]san[_ ]co[_ ]dinh|bdsdt|bat[_ ]dong[_ ]san[_ ]dau[_ ]tu)']
+    - concept: cfi_ppe_sale
+      section: investing
+      include: ['(tien[_ ]thu|thu[_ ]tien).*(thanh[_ ]ly|nhuong[_ ]ban).*(tscd|tai[_ ]san[_ ]co[_ ]dinh|bdsdt|bat[_ ]dong[_ ]san[_ ]dau[_ ]tu)']
+    - concept: cfi_loans_advanced
+      section: investing
+      include: ['(tien[_ ]chi|chi[_ ]tien).*(cho[_ ]vay|mua.*cong[_ ]cu[_ ]no|dau[_ ]tu.*nam[_ ]giu.*dao[_ ]han)']
+    - concept: cfi_loans_collected
+      section: investing
+      include: ['(tien[_ ]thu|thu[_ ]tien).*(cho[_ ]vay|thu[_ ]hoi.*cong[_ ]cu[_ ]no|thu[_ ]hoi.*dau[_ ]tu)']
+    - concept: cfi_investment_purchase
+      section: investing
+      include: ['(tien[_ ]chi|chi[_ ]tien).*(gop[_ ]von|dau[_ ]tu.*don[_ ]vi[_ ]khac|mua.*cong[_ ]ty[_ ]con)']
+    - concept: cfi_investment_sale
+      section: investing
+      include: ['(tien[_ ]thu|thu[_ ]tien).*(thu[_ ]hoi[_ ]gop[_ ]von|ban.*khoan[_ ]dau[_ ]tu|thanh[_ ]ly.*cong[_ ]ty[_ ]con)']
+    - concept: cfi_interest_dividends_received
+      section: investing
+      include: ['(tien[_ ]thu|thu[_ ]tien).*(lai[_ ]cho[_ ]vay|co[_ ]tuc|loi[_ ]nhuan.*duoc[_ ]chia)']
+    - concept: cff_borrowing_proceeds
+      section: financing
+      include: ['(tien[_ ]thu|thu[_ ]tien).*(di[_ ]vay|phat[_ ]hanh.*trai[_ ]phieu)']
+    - concept: cff_debt_repayments
+      section: financing
+      include: ['(tien[_ ]chi|chi[_ ]tien).*(tra[_ ]no[_ ]goc[_ ]vay|tra[_ ]no.*thue[_ ]tai[_ ]chinh|mua[_ ]lai.*trai[_ ]phieu)']
+    - concept: cff_owner_contributions
+      section: financing
+      include: ['(tien[_ ]thu|thu[_ ]tien).*(phat[_ ]hanh.*co[_ ]phieu|nhan[_ ]von[_ ]gop)']
+    - concept: cff_share_repurchases
+      section: financing
+      include: ['(tien[_ ]chi|chi[_ ]tien).*(mua[_ ]lai.*co[_ ]phieu|tra[_ ]lai[_ ]von[_ ]gop)']
+    - concept: cff_dividends_paid
+      section: financing
+      include: ['(tien[_ ]chi|chi[_ ]tien).*(co[_ ]tuc|loi[_ ]nhuan.*da[_ ]chia)|(co[_ ]tuc|loi[_ ]nhuan).*(da[_ ]tra|chi[_ ]tra)']
