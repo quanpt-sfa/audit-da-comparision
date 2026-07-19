@@ -19,9 +19,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Write the observed CFS shifting validation report"
     )
-    parser.add_argument(
-        "--config", default="config/cfs_shifting_validation.yaml"
-    )
+    parser.add_argument("--config", default="config/cfs_shifting_validation.yaml")
     args = parser.parse_args()
     config_path, config = load_config(args.config)
     output = resolve(config_path, config["paths"]["output_dir"])
@@ -32,15 +30,12 @@ def main() -> None:
     folds = maybe_read(output, "cfs_expected_cfo_folds")
     validation = maybe_read(output, "cfs_shifting_proxy_validation")
     yearly = maybe_read(output, "cfs_shifting_proxy_validation_by_year")
-    incremental = maybe_read(
-        output, "cfs_shifting_proxy_incremental_comparison"
-    )
-    restrictions = maybe_read(
-        output, "cfs_proxy_sample_restriction_status"
-    )
-    reconciliation = maybe_read(
-        output, "cfs_line_item_reconciliation_summary"
-    )
+    incremental = maybe_read(output, "cfs_shifting_proxy_incremental_comparison")
+    restrictions = maybe_read(output, "cfs_proxy_sample_restriction_status")
+    common_status = maybe_read(output, "cfs_common_sample_status")
+    industry_status = maybe_read(output, "cfs_industry_mapping_status")
+    industry_unmatched = maybe_read(output, "cfs_industry_unmatched_tickers")
+    reconciliation = maybe_read(output, "cfs_line_item_reconciliation_summary")
     top = maybe_read(output, "cfs_line_item_top_contributors")
 
     lines = [
@@ -50,12 +45,24 @@ def main() -> None:
         "",
         "- Observed preliminary-to-audited reclassification is a validation outcome, not direct evidence of managerial intent.",
         "- Outcome-specific scores are mandatory: absolute residual for any revision, positive residual for CFO decreases/CFF-down, and negative residual for CFO increases/CFI-up.",
-        "- Comparisons across proxy models use the common-model firm-year sample; model-available rows are retained only as coverage diagnostics.",
-        "- Raw CFO, within-year CFO percentile, firm-history deviation, and sales-only models are explicit baselines.",
+        "- `common_primary_models` excludes firm-history deviation; `common_all_models` includes it and quantifies the sample cost of requiring issuer history.",
+        "- Industry exclusions use the external ICB file. Unmatched tickers are not silently classified as non-financial.",
         "- Detailed line-item contributor tables contain reclassification candidates only; the all-resolution table is a separate audit output.",
         "- Detailed institutional conclusions remain provisional until high-coverage unmapped items and selected source documents are checked.",
         "",
     ]
+
+    if not industry_status.empty:
+        lines += [
+            "## ICB industry mapping",
+            "",
+            industry_status.to_markdown(index=False),
+            "",
+            f"- Unmatched tickers: {len(industry_unmatched):,}.",
+            "",
+        ]
+        if not industry_unmatched.empty:
+            lines += [industry_unmatched.head(100).to_markdown(index=False), ""]
 
     if not inventory.empty:
         status = inventory["mapping_status"].value_counts(dropna=False)
@@ -71,18 +78,18 @@ def main() -> None:
         ]
 
     if not coverage.empty:
-        lines += [
-            "## Selected CFS method coverage",
-            "",
-            coverage.to_markdown(index=False),
-            "",
-        ]
+        lines += ["## Selected CFS method coverage", "", coverage.to_markdown(index=False), ""]
 
     if not restrictions.empty:
+        lines += ["## Sample-restriction status", "", restrictions.to_markdown(index=False), ""]
+
+    if not common_status.empty:
         lines += [
-            "## Sample-restriction status",
+            "## Common-sample definitions",
             "",
-            restrictions.to_markdown(index=False),
+            common_status.to_markdown(index=False),
+            "",
+            "The primary table excludes `firm_history_deviation`; the all-model table shows whether conclusions change after requiring prior issuer history.",
             "",
         ]
 
@@ -90,86 +97,69 @@ def main() -> None:
         columns = [
             column
             for column in [
-                "fiscal_year",
-                "proxy_model",
-                "train_rows",
-                "test_rows",
-                "rmse",
-                "winsorized_rmse",
-                "rmse_ex_top_1pct",
-                "mae",
-                "median_absolute_error",
-                "p95_absolute_error",
-                "p99_absolute_error",
-                "maximum_absolute_error",
-                "maximum_error_issuer",
-                "status",
+                "fiscal_year", "proxy_model", "train_rows", "test_rows", "rmse",
+                "winsorized_rmse", "rmse_ex_top_1pct", "mae",
+                "median_absolute_error", "p95_absolute_error", "p99_absolute_error",
+                "maximum_absolute_error", "maximum_error_issuer", "status",
             ]
             if column in folds.columns
         ]
-        lines += [
-            "## Rolling expected-CFO folds",
-            "",
-            folds[columns].to_markdown(index=False),
-            "",
-        ]
+        lines += ["## Rolling expected-CFO folds", "", folds[columns].to_markdown(index=False), ""]
 
     if not validation.empty:
-        core = validation[
-            validation["sample_mode"].eq("common_models")
+        primary = validation[
+            validation["sample_mode"].eq("common_primary_models")
+            & validation["sample_restriction"].eq("analysis_core")
+        ].copy()
+        all_models = validation[
+            validation["sample_mode"].eq("common_all_models")
             & validation["sample_restriction"].eq("analysis_core")
         ].copy()
         lines += [
             "## Primary common-sample validation",
             "",
-            core.to_markdown(index=False)
-            if not core.empty
-            else "No common-model analysis-core results were produced.",
+            primary.to_markdown(index=False) if not primary.empty else "No primary common-sample results were produced.",
+            "",
+            "## All-model common-sample validation",
+            "",
+            all_models.to_markdown(index=False) if not all_models.empty else "No all-model common-sample results were produced.",
             "",
         ]
 
     if not incremental.empty:
-        core_incremental = incremental[
-            incremental["sample_mode"].eq("common_models")
-            & incremental["sample_restriction"].eq("analysis_core")
-        ].copy()
         columns = [
             column
             for column in [
-                "proxy_model",
-                "outcome",
-                "auc",
-                "reference_auc",
-                "delta_auc_vs_reference",
-                "average_precision",
-                "reference_average_precision",
-                "delta_ap_vs_reference",
-                "top_decile_lift",
-                "reference_top_decile_lift",
-                "delta_lift_vs_reference",
+                "proxy_model", "outcome", "auc", "reference_auc", "delta_auc_vs_reference",
+                "average_precision", "reference_average_precision", "delta_ap_vs_reference",
+                "top_decile_lift", "reference_top_decile_lift", "delta_lift_vs_reference",
             ]
-            if column in core_incremental.columns
+            if column in incremental.columns
         ]
-        lines += [
-            "## Incremental validity over raw CFO",
-            "",
-            core_incremental[columns].to_markdown(index=False)
-            if not core_incremental.empty
-            else "No incremental comparison was produced.",
-            "",
-        ]
+        for mode, title in [
+            ("common_primary_models", "Incremental validity on the primary common sample"),
+            ("common_all_models", "Incremental validity on the all-model common sample"),
+        ]:
+            table = incremental[
+                incremental["sample_mode"].eq(mode)
+                & incremental["sample_restriction"].eq("analysis_core")
+            ].copy()
+            lines += [
+                f"## {title}",
+                "",
+                table[columns].to_markdown(index=False) if not table.empty else "No incremental comparison was produced.",
+                "",
+            ]
 
     if not yearly.empty:
         temporal = yearly[
-            yearly["sample_mode"].eq("common_models")
+            yearly["sample_mode"].eq("common_primary_models")
             & yearly["sample_restriction"].eq("analysis_core")
         ].copy()
         lines += [
             "## Temporal stability on the primary sample",
             "",
-            temporal.to_markdown(index=False)
-            if not temporal.empty
-            else "No annual common-sample results were produced.",
+            temporal.to_markdown(index=False) if not temporal.empty else "No annual primary common-sample results were produced.",
             "",
         ]
 
@@ -217,8 +207,8 @@ def main() -> None:
         "2. A proxy supports upward preliminary-CFO shifting only if the positive score predicts audited CFO decreases, especially CFF-dominant decreases.",
         "3. Prediction of CFI-dominant increases by the negative score indicates a bidirectional classification-reliability construct, not a one-sided manipulation construct.",
         "4. Expected-CFO models must improve on raw CFO and within-year percentile baselines on the same firm-year sample.",
-        "5. Raw RMSE is not interpreted without winsorized RMSE, MAE, median error, tail diagnostics, and the maximum-error issuer.",
-        "6. Main claims require stability in listed, valid-ticker, lag-asset-screened, scale/scope-clean, and non-financial samples where those fields are available.",
+        "5. A conclusion is sample-robust only if it is stable on both `common_primary_models` and `common_all_models`; differences quantify the effect of requiring issuer history.",
+        "6. `analysis_core` is fully evaluated only when ICB financial status and scale/scope flags are both available; otherwise the status is `PARTIALLY_EVALUATED`.",
         "7. Line-item mechanisms are named only when mapped lines reconcile materially to aggregate CFI/CFF changes and source-document checks confirm semantic labels.",
     ]
 
