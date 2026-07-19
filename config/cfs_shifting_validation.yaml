@@ -1,7 +1,7 @@
 paths:
   raw_input: data/raw/financial_statement_full_long.csv.gz
   panel_input: data/processed/accrual_panel.csv.gz
-  industry_input: source/bctc_industry_icb.csv
+  industry_input: data/raw/bctc_industry_icb.csv
   output_dir: artifacts/next_diagnostics
 
 upstream:
@@ -27,7 +27,7 @@ cfs_shifting_validation:
   fold_winsor_upper: 0.99
   incremental_reference_model: raw_cfo_level
 
-  # Exact schema of source/bctc_industry_icb.csv supplied for this project.
+  # Exact schema of data/raw/bctc_industry_icb.csv supplied for this project.
   # The file is a static ticker-level mapping with no fiscal-year or numeric ICB-code column.
   industry_mapping:
     required: true
