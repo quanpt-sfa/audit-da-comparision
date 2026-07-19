@@ -5,7 +5,6 @@ from typing import Any
 import re
 import unicodedata
 
-import numpy as np
 import pandas as pd
 
 
@@ -22,7 +21,7 @@ def _read_csv_flexible(path: str | Path) -> tuple[pd.DataFrame, str]:
     last_error: Exception | None = None
     for encoding in ("utf-8-sig", "utf-8", "cp1258", "latin1"):
         try:
-            frame = pd.read_csv(path, sep=None, engine="python", encoding=encoding, low_memory=False)
+            frame = pd.read_csv(path, sep=None, engine="python", encoding=encoding)
             return frame, encoding
         except (UnicodeDecodeError, pd.errors.ParserError) as exc:
             last_error = exc
@@ -52,8 +51,8 @@ def load_icb_industry(
     ticker_column = settings.get("ticker_column") or _find_column(
         normalised,
         [
-            "issuer_ticker", "ticker", "stock_code", "symbol", "code", "ma_ck",
-            "ma_chung_khoan", "mack", "security_code",
+            "issuer_ticker", "ticker", "stock_code", "ticker_code", "stock_symbol",
+            "symbol", "code", "ma_ck", "ma_chung_khoan", "mack", "security_code",
         ],
     )
     if ticker_column is None:
@@ -74,16 +73,18 @@ def load_icb_industry(
     industry_candidates = settings.get(
         "industry_name_candidates",
         [
-            "icb_industry_name", "icb_level_1_name", "icb1_name", "icb_industry",
-            "industry_name", "industry", "sector_name", "sector", "nganh_cap_1",
-            "ten_nganh_icb", "ten_nganh",
+            "icb_industry_name", "icb_level_1_name", "icb_level1_name",
+            "icb_lv1_name", "icb1_name", "icb_industry", "industry_name",
+            "industry", "sector_name", "sector", "nganh_cap_1",
+            "nganh_icb_cap_1", "ten_nganh_icb", "ten_nganh",
         ],
     )
     code_candidates = settings.get(
         "icb_code_candidates",
         [
-            "icb_industry_code", "icb_level_1_code", "icb1_code", "icb_code",
-            "industry_code", "sector_code", "ma_nganh_icb", "ma_nganh_cap_1",
+            "icb_industry_code", "icb_level_1_code", "icb_level1_code",
+            "icb_lv1_code", "icb1_code", "icb_code", "industry_code",
+            "sector_code", "ma_nganh_icb", "ma_nganh_cap_1",
         ],
     )
     industry_column = _find_column(normalised, industry_candidates)
@@ -95,7 +96,9 @@ def load_icb_industry(
         r"\.(HO|HN|UPCOM)$", "", regex=True
     )
     if year_column is not None:
-        output["fiscal_year"] = pd.to_numeric(raw[year_column], errors="coerce").astype("Int64")
+        parsed_year = pd.to_numeric(raw[year_column], errors="coerce").astype("Int64")
+        if parsed_year.notna().any():
+            output["fiscal_year"] = parsed_year
     output["industry_name"] = (
         raw[industry_column].astype("string")
         if industry_column is not None
@@ -135,7 +138,7 @@ def load_icb_industry(
     duplicate_rows = int(output.duplicated(keys, keep=False).sum())
     output = (
         output.sort_values(keys)
-        .groupby(keys, as_index=False, observed=True)
+        .groupby(keys, as_index=False, observed=True, dropna=False)
         .agg(
             industry_name=("industry_name", lambda x: x.dropna().astype(str).iloc[0] if x.notna().any() else pd.NA),
             icb_industry_code=("icb_industry_code", lambda x: x.dropna().astype(str).iloc[0] if x.notna().any() else pd.NA),
