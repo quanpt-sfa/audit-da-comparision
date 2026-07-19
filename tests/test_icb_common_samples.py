@@ -10,36 +10,63 @@ from audit_da.cfs_proxy_validate_samples import validate_proxy_predictions_dual_
 from audit_da.icb_industry import attach_icb_industry, load_icb_industry
 
 
-def test_icb_loader_detects_vietnamese_schema_and_financials(tmp_path: Path) -> None:
+def test_icb_loader_matches_supplied_schema_exactly(tmp_path: Path) -> None:
     path = tmp_path / "bctc_industry_icb.csv"
     pd.DataFrame(
         {
-            "Mã CK": ["AAA", "BBB"],
-            "Ngành cấp 1": ["Công nghiệp", "Tài chính"],
-            "Mã ngành ICB": [2000, 8000],
+            "issuer_ticker": ["AAA", "BBB", "CCC"],
+            "source_ticker_raw": ["AAA", "BBB", "CCC"],
+            "firm_name_raw": ["Alpha", "Beta", "Gamma"],
+            "exchange_raw": ["HOSE", "HNX", "UPCOM"],
+            "icb_l1": ["Công nghiệp", "Tài chính", pd.NA],
+            "icb_l2": ["Xây dựng và Vật liệu", "Bất động sản", pd.NA],
+            "icb_l3": ["Xây dựng và Vật liệu", "Bất động sản", pd.NA],
+            "icb_l4": ["Xây dựng", "Bất động sản", pd.NA],
+            "icb_l5": ["Xây dựng", "Bất động sản dân cư", pd.NA],
+            "source_file": ["a.xlsx", "b.xlsx", "c.xlsx"],
         }
     ).to_csv(path, index=False, encoding="utf-8-sig")
 
-    mapping, status = load_icb_industry(path, {"financial_icb_prefixes": ["8"]})
-    assert status.loc[0, "ticker_column"] == "Mã CK"
-    assert mapping.set_index("issuer_ticker").loc["AAA", "financial_flag"] == 0
-    assert mapping.set_index("issuer_ticker").loc["BBB", "financial_flag"] == 1
+    settings = {
+        "ticker_column": "issuer_ticker",
+        "industry_column": "icb_l1",
+        "icb_level_columns": ["icb_l1", "icb_l2", "icb_l3", "icb_l4", "icb_l5"],
+        "retain_columns": ["source_ticker_raw", "firm_name_raw", "exchange_raw"],
+        "financial_industry_values": ["Tài chính", "Ngân hàng"],
+        "missing_industry_is_unknown": True,
+    }
+    mapping, status = load_icb_industry(path, settings)
+    indexed = mapping.set_index("issuer_ticker")
+
+    assert status.loc[0, "ticker_column"] == "issuer_ticker"
+    assert status.loc[0, "industry_column"] == "icb_l1"
+    assert status.loc[0, "financial_rows"] == 1
+    assert status.loc[0, "nonfinancial_rows"] == 1
+    assert status.loc[0, "unknown_financial_rows"] == 1
+    assert indexed.loc["AAA", "financial_flag"] == 0
+    assert indexed.loc["BBB", "financial_flag"] == 1
+    assert pd.isna(indexed.loc["CCC", "financial_flag"])
+    assert indexed.loc["BBB", "icb_l5"] == "Bất động sản dân cư"
 
     panel = pd.DataFrame(
         {
-            "issuer_ticker": ["AAA", "BBB", "CCC"],
-            "fiscal_year": [2024, 2024, 2024],
-            "audit_status": ["unaudited"] * 3,
+            "issuer_ticker": ["AAA", "BBB", "CCC", "DDD"],
+            "fiscal_year": [2024] * 4,
+            "audit_status": ["unaudited"] * 4,
         }
     )
     merged, join_status, unmatched = attach_icb_industry(panel, mapping)
-    assert join_status.loc[0, "matched_tickers"] == 2
-    assert unmatched["issuer_ticker"].tolist() == ["CCC"]
+    assert join_status.loc[0, "key_matched_tickers"] == 3
+    assert join_status.loc[0, "unknown_industry_rows"] == 1
+    assert unmatched["issuer_ticker"].tolist() == ["DDD"]
     assert merged.loc[merged["issuer_ticker"].eq("CCC"), "financial_flag"].isna().all()
+    assert merged.loc[merged["issuer_ticker"].eq("DDD"), "financial_flag"].isna().all()
 
 
 def test_extended_cff_and_interest_rules_match_realistic_labels() -> None:
-    config = yaml.safe_load(Path("config/cfs_shifting_validation.yaml").read_text(encoding="utf-8"))
+    config = yaml.safe_load(
+        Path("config/cfs_shifting_validation.yaml").read_text(encoding="utf-8")
+    )
     rules = compile_item_rules(config["cfs_shifting_validation"])
     examples = {
         "Tiền trả nợ gốc vay": "cff_debt_repayments",
