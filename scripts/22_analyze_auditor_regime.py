@@ -20,6 +20,7 @@ from audit_da.diag_common import write_tables
 AUDITOR_OUTPUTS = (
     "cfs_auditor_firm_year",
     "cfs_auditor_name_mapping",
+    "cfs_auditor_analysis_window_status",
     "cfs_auditor_analysis_sample",
     "cfs_auditor_regime_coverage",
     "cfs_auditor_regime_metrics",
@@ -87,6 +88,65 @@ def load_project_auditor_source(
         audited_label=audited_label,
         required_scope=required_scope,
     )
+
+
+def apply_analysis_year_window(
+    cases: pd.DataFrame,
+    firm_year: pd.DataFrame,
+    settings: dict,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    minimum_year = int(settings.get("analysis_minimum_year", 2015))
+    maximum_year = int(settings.get("analysis_maximum_year", 2025))
+    if minimum_year > maximum_year:
+        raise ValueError(
+            "analysis_minimum_year must be less than or equal to "
+            "analysis_maximum_year"
+        )
+
+    def restrict(frame: pd.DataFrame, label: str) -> tuple[pd.DataFrame, dict]:
+        if frame.empty:
+            return frame.copy(), {
+                f"{label}_rows_before": 0,
+                f"{label}_rows_after": 0,
+                f"{label}_minimum_year_after": pd.NA,
+                f"{label}_maximum_year_after": pd.NA,
+            }
+        if "fiscal_year" not in frame.columns:
+            raise ValueError(f"{label} table has no fiscal_year column")
+        year = pd.to_numeric(frame["fiscal_year"], errors="coerce")
+        keep = year.between(minimum_year, maximum_year, inclusive="both")
+        restricted = frame.loc[keep].copy()
+        restricted["fiscal_year"] = year.loc[keep].astype(int)
+        return restricted, {
+            f"{label}_rows_before": len(frame),
+            f"{label}_rows_after": len(restricted),
+            f"{label}_minimum_year_after": (
+                int(restricted["fiscal_year"].min())
+                if not restricted.empty
+                else pd.NA
+            ),
+            f"{label}_maximum_year_after": (
+                int(restricted["fiscal_year"].max())
+                if not restricted.empty
+                else pd.NA
+            ),
+        }
+
+    cases_window, case_status = restrict(cases, "case")
+    firm_year_window, auditor_status = restrict(firm_year, "auditor_firm_year")
+    status = pd.DataFrame(
+        [
+            {
+                "status": "PASS",
+                "analysis_minimum_year": minimum_year,
+                "analysis_maximum_year": maximum_year,
+                "window_basis": "TT200_REPORTING_REGIME",
+                **case_status,
+                **auditor_status,
+            }
+        ]
+    )
+    return cases_window, firm_year_window, status
 
 
 def update_completion_gate(output: Path, auditor_status: pd.DataFrame) -> pd.DataFrame:
@@ -184,12 +244,24 @@ def main() -> None:
         audited_label=cfs_settings.get("audited_label", "audited"),
         required_scope=cfs_settings.get("required_scope", "consolidated"),
     )
+    cases, firm_year, window_status = apply_analysis_year_window(
+        cases, firm_year, settings
+    )
+    if not source_status.empty:
+        source_status = source_status.copy()
+        source_status["analysis_minimum_year"] = int(
+            settings.get("analysis_minimum_year", 2015)
+        )
+        source_status["analysis_maximum_year"] = int(
+            settings.get("analysis_maximum_year", 2025)
+        )
 
     if firm_year.empty:
         remove_stale_outputs(output)
         regime_status = unavailable_status(cases, source_status)
         tables = {
             "cfs_auditor_source_status": source_status,
+            "cfs_auditor_analysis_window_status": window_status,
             "cfs_auditor_regime_status": regime_status,
             "cfs_completion_gate_status": update_completion_gate(
                 output, regime_status
@@ -206,6 +278,7 @@ def main() -> None:
     tables["cfs_auditor_firm_year"] = firm_year
     tables["cfs_auditor_name_mapping"] = name_map
     tables["cfs_auditor_source_status"] = source_status
+    tables["cfs_auditor_analysis_window_status"] = window_status
     tables["cfs_completion_gate_status"] = update_completion_gate(
         output, tables["cfs_auditor_regime_status"]
     )
