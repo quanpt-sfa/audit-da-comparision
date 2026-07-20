@@ -13,7 +13,10 @@ from audit_da.analysis_window import window_from_section
 def read_table(output: Path, name: str, required: bool = True) -> pd.DataFrame:
     for path in (output / f"{name}.csv", output / f"{name}.csv.gz"):
         if path.exists():
-            return pd.read_csv(path, low_memory=False)
+            try:
+                return pd.read_csv(path, low_memory=False)
+            except pd.errors.EmptyDataError:
+                return pd.DataFrame()
     if required:
         raise FileNotFoundError(f"Required table not found: {name}")
     return pd.DataFrame()
@@ -53,6 +56,8 @@ def restrict_years(
 ) -> pd.DataFrame:
     if frame.empty:
         return frame.copy()
+    if "fiscal_year" not in frame.columns:
+        raise ValueError("Analysis table has no fiscal_year column")
     window = window_from_section(settings)
     year = pd.to_numeric(frame["fiscal_year"], errors="coerce")
     mask = window.source_mask(year) if use_source_window else window.test_mask(year)
