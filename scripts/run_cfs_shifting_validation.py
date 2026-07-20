@@ -151,9 +151,13 @@ def main() -> None:
             "19_validate_cfs_shifting_proxies.py",
             "21_complete_cfs_validation_gates.py",
             "22_analyze_auditor_regime.py",
+            "27_analyze_auditor_switch_event_study.py",
+            "28_analyze_auditor_switch_dynamic_did.py",
+            "29_analyze_yearly_auc_heterogeneity.py",
             "25_analyze_exchange_covid_robustness.py",
             "20_write_cfs_shifting_validation_report.py",
             "23_write_auditor_regime_report.py",
+            "30_write_auditor_switch_report.py",
             "26_write_exchange_covid_robustness_report.py",
             "24_write_time_contract_report.py",
         ]:
