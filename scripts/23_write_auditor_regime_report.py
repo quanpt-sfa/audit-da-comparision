@@ -58,7 +58,9 @@ def main() -> None:
         "",
         "## Interpretation boundaries",
         "",
-        "- The primary evaluation window is fiscal years 2015-2025; earlier years may be retained only for rolling history or model training.",
+        "- The TT200 source and target-construction period is fiscal years 2015-2025.",
+        "- Fiscal year 2015 is retained as the first source/warm-up year; out-of-sample criterion-validity tests begin in 2016 or the first later year satisfying the minimum-training gate.",
+        "- Auditor metadata retain 2015 for consecutive-year switch histories, while Big4/non-Big4 score metrics use common-primary test observations from 2016 onward.",
         "- Auditor identity is joined after abnormal-CFO scores are generated and is never used to fit expected CFO.",
         "- Big4/non-Big4 results describe criterion-validity heterogeneity, not a causal effect of auditor choice.",
         "- Unknown and ambiguous auditor records are reported separately and are not silently coded as non-Big4.",
@@ -67,7 +69,7 @@ def main() -> None:
         "",
     ]
     add_table(lines, "Auditor source and schema", source, "No auditor source was evaluated.")
-    add_table(lines, "Primary analysis-year window", window, "No analysis-window status was produced.")
+    add_table(lines, "Source and out-of-sample time contract", window, "No analysis-window status was produced.")
     add_table(lines, "Auditor-regime gate", status, "No auditor-regime status was produced.")
     add_table(lines, "Coverage in the primary analysis sample", coverage, "No coverage table was produced.")
     add_table(lines, "Criterion validity by auditor group", metrics, "No stratified metrics were produced.")
@@ -86,6 +88,7 @@ def main() -> None:
         "3. Do not interpret a prevalence difference as detection quality without accounting for client selection.",
         "4. Use the balance table and switch counts to delimit selection and within-firm evidence.",
         "5. Preserve the main pooled results when auditor coverage is incomplete; heterogeneity is an extension, not a sample filter.",
+        "6. Do not describe 2015 as an out-of-sample model test year; it is the first TT200 source and warm-up year.",
     ]
     report = output / "CFS_AUDITOR_REGIME_REPORT.md"
     report.write_text("\n".join(lines), encoding="utf-8")
