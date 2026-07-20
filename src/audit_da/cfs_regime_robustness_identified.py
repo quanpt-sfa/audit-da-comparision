@@ -77,7 +77,7 @@ def identified_covid_interactions(
 ) -> pd.DataFrame:
     covid = settings.get("covid", {})
     windows = {
-        "PRIMARY_2020_2021": covid.get("primary_shock_years", [2020, 2021]),
+        "PRIMARY_CONFIGURED": covid.get("primary_shock_years", [2020, 2021]),
         **covid.get(
             "alternative_shock_windows",
             {
