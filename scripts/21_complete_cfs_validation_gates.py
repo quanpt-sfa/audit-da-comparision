@@ -40,6 +40,19 @@ def _year_bounds(frame: pd.DataFrame) -> tuple[object, object]:
     return int(year.min()), int(year.max())
 
 
+def _inside(value: object, lower: int, upper: int) -> bool:
+    return bool(pd.isna(value) or lower <= int(value) <= upper)
+
+
+def _constant_column(frame: pd.DataFrame, column: str, expected: int) -> bool:
+    if frame.empty or column not in frame.columns:
+        return False
+    values = set(
+        pd.to_numeric(frame[column], errors="coerce").dropna().astype(int)
+    )
+    return values == {expected}
+
+
 def time_contract_gate(
     settings: dict,
     panel: pd.DataFrame,
@@ -56,18 +69,53 @@ def time_contract_gate(
     primary_min, primary_max = _year_bounds(primary_cases)
 
     source_ok = all(
-        value is pd.NA
-        or value is None
-        or (window.source_start_year <= int(value) <= window.source_end_year)
-        for value in (panel_min, panel_max, target_min, target_max, item_min, item_max)
+        _inside(value, window.source_start_year, window.source_end_year)
+        for value in (
+            panel_min,
+            panel_max,
+            target_min,
+            target_max,
+            item_min,
+            item_max,
+        )
     )
     test_ok = all(
-        value is pd.NA
-        or value is None
-        or (window.test_start_year <= int(value) <= window.test_end_year)
+        _inside(value, window.test_start_year, window.test_end_year)
         for value in (fold_min, fold_max, primary_min, primary_max)
     )
-    status = "PASS" if source_ok and test_ok else "FAILED"
+    fold_contract_ok = all(
+        [
+            _constant_column(
+                folds, "source_start_year", window.source_start_year
+            ),
+            _constant_column(folds, "source_end_year", window.source_end_year),
+            _constant_column(
+                folds, "training_start_year", window.training_start_year
+            ),
+            _constant_column(folds, "test_start_year", window.test_start_year),
+            _constant_column(folds, "test_end_year", window.test_end_year),
+        ]
+    )
+    source_actual_ok = (
+        not folds.empty
+        and "source_panel_minimum_year_actual" in folds.columns
+        and pd.to_numeric(
+            folds["source_panel_minimum_year_actual"], errors="coerce"
+        ).dropna().ge(window.training_start_year).all()
+    )
+    evidence_ok = all(
+        not frame.empty
+        for frame in (panel, observed, line_items, folds, primary_cases)
+    )
+    status = (
+        "PASS"
+        if source_ok
+        and test_ok
+        and fold_contract_ok
+        and source_actual_ok
+        and evidence_ok
+        else "FAILED"
+    )
     detail = pd.DataFrame(
         [
             {
@@ -85,6 +133,9 @@ def time_contract_gate(
                 "common_primary_maximum_year": primary_max,
                 "source_window_pass": source_ok,
                 "test_window_pass": test_ok,
+                "expected_cfo_contract_metadata_pass": fold_contract_ok,
+                "expected_cfo_actual_source_pass": source_actual_ok,
+                "required_evidence_present": evidence_ok,
                 "common_sample_rule": "intersection of prespecified model availability by issuer-year",
             }
         ]
