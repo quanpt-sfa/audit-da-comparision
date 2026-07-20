@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from copy import deepcopy
 import os
 from pathlib import Path
 import subprocess
@@ -24,7 +25,7 @@ def _resolve(repo_root: Path, value: str) -> Path:
     return path if path.is_absolute() else (repo_root / path).resolve()
 
 
-def _validate_inputs(repo_root: Path, config_path: Path) -> None:
+def _validate_inputs(repo_root: Path, config_path: Path) -> tuple[dict, AnalysisWindow]:
     config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
     window = AnalysisWindow.from_mapping(config.get("analysis_window"))
     panel_path = _resolve(repo_root, config["paths"]["panel_input"])
@@ -76,11 +77,62 @@ def _validate_inputs(repo_root: Path, config_path: Path) -> None:
         "test_end_year_contract": window.test_end_year,
     }
     for column, expected in contract_values.items():
-        values = set(pd.to_numeric(baseline[column], errors="coerce").dropna().astype(int))
+        values = set(
+            pd.to_numeric(baseline[column], errors="coerce").dropna().astype(int)
+        )
         if values != {expected}:
             raise RuntimeError(
                 f"OLS baseline {column}={sorted(values)} does not match {expected}"
             )
+    return config, window
+
+
+def _build_runtime_inputs(
+    repo_root: Path,
+    config_path: Path,
+    config: dict,
+    window: AnalysisWindow,
+) -> tuple[Path, Path, pd.DataFrame]:
+    panel_path = _resolve(repo_root, config["paths"]["panel_input"])
+    panel = pd.read_csv(panel_path, low_memory=False)
+    source_panel = panel.loc[window.source_mask(panel["fiscal_year"])].copy()
+    if source_panel.empty:
+        raise RuntimeError("No panel rows remain in the TT200 source window")
+
+    runtime_panel = config_path.with_name(".next_diagnostics.tt200_panel.csv.gz")
+    source_panel.to_csv(runtime_panel, index=False, compression="gzip")
+
+    runtime = deepcopy(config)
+    runtime["analysis_window"] = window.as_dict()
+    runtime["paths"]["panel_input"] = str(runtime_panel.resolve())
+    runtime.setdefault("cfs_identity", {})["minimum_year"] = window.source_start_year
+    runtime["cfs_identity"]["maximum_year"] = window.source_end_year
+    runtime.setdefault("cfs_deep_dive", {})["minimum_year"] = window.source_start_year
+    runtime["cfs_deep_dive"]["maximum_year"] = window.source_end_year
+    runtime.setdefault("calibration", {})["training_start_year"] = (
+        window.training_start_year
+    )
+    runtime["calibration"]["minimum_test_year"] = window.test_start_year
+    runtime["calibration"]["maximum_test_year"] = window.test_end_year
+
+    runtime_path = config_path.with_name(".next_diagnostics.runtime.yaml")
+    runtime_path.write_text(
+        yaml.safe_dump(runtime, allow_unicode=True, sort_keys=False),
+        encoding="utf-8",
+    )
+    status = pd.DataFrame(
+        [
+            {
+                "status": "PASS",
+                **window.as_dict(),
+                "panel_rows_before": len(panel),
+                "panel_rows_after_source_window": len(source_panel),
+                "panel_minimum_year_after": int(source_panel["fiscal_year"].min()),
+                "panel_maximum_year_after": int(source_panel["fiscal_year"].max()),
+            }
+        ]
+    )
+    return runtime_path, runtime_panel, status
 
 
 def main() -> None:
@@ -96,7 +148,10 @@ def main() -> None:
     if not config_path.is_absolute():
         config_path = (repo_root / config_path).resolve()
 
-    _validate_inputs(repo_root, config_path)
+    config, window = _validate_inputs(repo_root, config_path)
+    runtime_path, runtime_panel, window_status = _build_runtime_inputs(
+        repo_root, config_path, config, window
+    )
 
     scripts = [
         "05_audit_tails_and_ta.py",
@@ -120,15 +175,25 @@ def main() -> None:
         os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else ""
     )
 
-    for script in scripts:
-        command = [
-            sys.executable,
-            str(scripts_dir / script),
-            "--config",
-            str(config_path),
-        ]
-        print("Running", " ".join(command), flush=True)
-        subprocess.run(command, check=True, cwd=repo_root, env=env)
+    output_dir = _resolve(repo_root, config["paths"]["output_dir"])
+    output_dir.mkdir(parents=True, exist_ok=True)
+    window_status.to_csv(
+        output_dir / "next_diagnostics_time_contract_status.csv", index=False
+    )
+
+    try:
+        for script in scripts:
+            command = [
+                sys.executable,
+                str(scripts_dir / script),
+                "--config",
+                str(runtime_path),
+            ]
+            print("Running", " ".join(command), flush=True)
+            subprocess.run(command, check=True, cwd=repo_root, env=env)
+    finally:
+        runtime_path.unlink(missing_ok=True)
+        runtime_panel.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":
