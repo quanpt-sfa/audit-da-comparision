@@ -2,14 +2,44 @@ from __future__ import annotations
 
 import argparse
 
+import pandas as pd
+
 from _auditor_switch_common import (
     load_context,
     read_table,
     restrict_years,
     update_completion_gate,
 )
-from audit_da.auditor_switch_event_study import run_switch_event_study
+from audit_da.auditor_switch_event_study import (
+    build_stacked_switch_sample,
+    identify_clean_switch_events,
+    prepare_switch_analysis_panel,
+    run_switch_event_study,
+)
 from audit_da.diag_common import write_tables
+
+
+EVENT_OUTPUTS = (
+    "cfs_auditor_switch_direct_panel",
+    "cfs_auditor_switch_line_item_status",
+    "cfs_auditor_switch_event_diagnostics",
+    "cfs_auditor_switch_stack_support",
+    "cfs_auditor_switch_stacked_sample",
+    "cfs_auditor_switch_event_study",
+    "cfs_auditor_switch_pretrend_tests",
+    "cfs_auditor_switch_borrowing_heterogeneity",
+    "cfs_auditor_switch_borrowing_pretrend",
+    "cfs_auditor_switch_borrowing_status",
+    "cfs_auditor_switch_event_study_status",
+)
+
+
+def remove_stale_outputs(output) -> None:
+    for name in EVENT_OUTPUTS:
+        for suffix in (".csv", ".csv.gz"):
+            path = output / f"{name}{suffix}"
+            if path.exists():
+                path.unlink()
 
 
 def main() -> None:
@@ -48,14 +78,62 @@ def main() -> None:
         line_items, auditor_settings, use_source_window=True
     )
 
-    tables = run_switch_event_study(
+    panel, line_status = prepare_switch_analysis_panel(
         direct_cases,
         firm_year,
         auditor_settings,
         cfs_settings=cfs_settings,
         line_item_panel=line_items,
     )
-    status = tables["cfs_auditor_switch_event_study_status"]
+    events = identify_clean_switch_events(firm_year, auditor_settings)
+    stacked, support = (
+        build_stacked_switch_sample(panel, events, auditor_settings)
+        if not events.empty and not panel.empty
+        else (pd.DataFrame(), pd.DataFrame())
+    )
+    if stacked.empty:
+        remove_stale_outputs(output)
+        primary_events = (
+            int(events["primary_event"].fillna(False).astype(bool).sum())
+            if not events.empty and "primary_event" in events.columns
+            else 0
+        )
+        reason = (
+            "No direct CFS target observations were available."
+            if panel.empty
+            else "No clean switch event had sufficient stable-control support."
+        )
+        status = pd.DataFrame(
+            [
+                {
+                    "gate": "auditor_switch_event_study",
+                    "status": "NOT_EVALUATED",
+                    "candidate_switch_events": len(events),
+                    "primary_clean_events": primary_events,
+                    "stacked_events": 0,
+                    "analysis_rows": 0,
+                    "interpretation": reason,
+                }
+            ]
+        )
+        tables = {
+            "cfs_auditor_switch_direct_panel": panel,
+            "cfs_auditor_switch_line_item_status": line_status,
+            "cfs_auditor_switch_event_diagnostics": events,
+            "cfs_auditor_switch_stack_support": support,
+            "cfs_auditor_switch_stacked_sample": stacked,
+            "cfs_auditor_switch_event_study_status": status,
+        }
+    else:
+        tables = run_switch_event_study(
+            direct_cases,
+            firm_year,
+            auditor_settings,
+            cfs_settings=cfs_settings,
+            line_item_panel=line_items,
+        )
+        status = tables["cfs_auditor_switch_event_study_status"]
+
     tables["cfs_completion_gate_status"] = update_completion_gate(
         output, status
     )
