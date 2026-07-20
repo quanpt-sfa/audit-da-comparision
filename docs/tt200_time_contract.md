@@ -47,6 +47,8 @@ CFS targets are constructed directly from paired preliminary and audited stateme
 New or updated outputs include:
 
 - OLS rows with source, training and test contract metadata;
+- `ols_baseline_time_contract_status.csv`;
+- `next_diagnostics_time_contract_status.csv`;
 - `cfs_identity_window_status.csv`;
 - `cfs_target_input_coverage.csv`;
 - `cfs_deep_dive_window_status.csv`;
@@ -54,6 +56,7 @@ New or updated outputs include:
 - `cfs_analysis_window_status.csv`;
 - `cfs_time_contract_status.csv`;
 - `cfs_auditor_analysis_window_status.csv`;
+- `TT200_TIME_CONTRACT_REPORT.md`;
 - completion gate `consistent_tt200_time_contract`.
 
 `run_next_diagnostics.py` rejects an OLS baseline that lacks contract metadata, contains training years before 2015, or contains test years outside 2016-2025. This prevents stale artifacts from silently contaminating a rerun.
