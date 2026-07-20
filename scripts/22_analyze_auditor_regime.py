@@ -8,10 +8,8 @@ import yaml
 
 from _next_diag_common import load_config, resolve
 from audit_da.auditor_regime import run_auditor_regime_analysis
-from audit_da.auditor_source import (
-    discover_auditor_sources,
-    load_auditor_firm_year_resilient,
-)
+from audit_da.auditor_source import discover_auditor_sources
+from audit_da.auditor_source_safe import load_auditor_firm_year_safe
 from audit_da.diag_common import write_tables
 
 
@@ -104,7 +102,13 @@ def unavailable_status(cases: pd.DataFrame, source_status: pd.DataFrame) -> pd.D
     if not source_status.empty:
         fields = [
             column
-            for column in ("path", "status", "reason")
+            for column in (
+                "path",
+                "status",
+                "reason",
+                "initial_error",
+                "retry_error",
+            )
             if column in source_status
         ]
         if fields:
@@ -153,7 +157,7 @@ def main() -> None:
         ),
     )
     paths = configured_source_paths(config_path, config, settings)
-    firm_year, name_map, source_status = load_auditor_firm_year_resilient(
+    firm_year, name_map, source_status = load_auditor_firm_year_safe(
         paths,
         settings,
         audited_label=cfs_settings.get("audited_label", "audited"),
