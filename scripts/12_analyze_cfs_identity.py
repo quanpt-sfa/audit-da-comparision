@@ -5,6 +5,7 @@ import argparse
 import pandas as pd
 
 from _next_diag_common import load_config, resolve
+from audit_da.cfs_target_finalize import finalize_cfs_target_tables
 from audit_da.next_diagnostics import cfs_identity_tables, write_tables
 
 
@@ -38,7 +39,12 @@ def main() -> None:
             f"for identity testing: {missing}. Pull the latest branch, rebuild the "
             "panel with scripts/01_build_panel.py, then rerun OLS baselines."
         )
-    tables = cfs_identity_tables(panel, baseline, config["cfs_identity"])
+    settings = config["cfs_identity"]
+    tables = cfs_identity_tables(panel, baseline, settings)
+    # Target construction is finalized from the paired preliminary/audited
+    # statement values. OLS-baseline availability affects only reduction and
+    # Shapley diagnostics, never the candidate label itself.
+    tables = finalize_cfs_target_tables(tables, settings)
     write_tables(tables, resolve(config_path, config["paths"]["output_dir"]))
 
 
