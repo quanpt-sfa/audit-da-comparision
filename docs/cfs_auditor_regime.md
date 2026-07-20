@@ -4,6 +4,19 @@
 
 This extension tests whether the criterion validity of abnormal-CFO scores differs between Big4 and non-Big4 audit regimes. Auditor identity is joined only after expected-CFO scores are constructed and is never used as an expected-CFO predictor.
 
+## Primary reporting window
+
+The primary evaluation window is fiscal years 2015-2025. This aligns the empirical sample with the reporting regime governed by Circular 200/2014. Earlier years may remain in the processed accounting panel only to form lagged variables, firm history, and expanding-window training samples. They are not reported as test or outcome years.
+
+The standard runner creates a temporary runtime config that sets:
+
+- `minimum_year = 2015`;
+- `maximum_year = 2025`;
+- `minimum_test_year = 2015`;
+- `maximum_test_year = 2025`.
+
+The upstream CFS deep-dive also starts in 2015, so the observed correction targets and the proxy-validation test years use the same period boundary.
+
 ## Verified auditor source
 
 The project source is fixed at:
@@ -52,6 +65,7 @@ The pooled sample remains unchanged. Auditor coverage does not filter the main v
 The extension reports:
 
 - exact source-contract status and metadata checks;
+- analysis-window status, including rows before and after the 2015-2025 filter;
 - name mapping and issuer-year auditor assignments;
 - Big4/non-Big4/unknown/ambiguous coverage and outcome prevalence;
 - group-specific AUC, average precision, top-decile rate and lift;
