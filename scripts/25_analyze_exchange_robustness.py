@@ -56,6 +56,8 @@ def main() -> None:
         bootstrap_seed=args.bootstrap_seed,
         outcomes=parse_csv_values(args.outcomes),
     )
+    if args.bootstrap_seed is not None:
+        settings["exchange_bootstrap_seed"] = int(args.bootstrap_seed)
     exchanges = parse_csv_values(args.exchanges)
     if exchanges is not None:
         settings["exchange_groups"] = exchanges
