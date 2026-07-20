@@ -86,8 +86,17 @@ def run_exchange_robustness(
     sample = prepare_regime_sample(cases, settings)
     outcomes = _configured_outcomes(sample, settings)
     exchanges = _configured_exchanges(settings)
+    if not outcomes:
+        raise ValueError("No configured robustness outcomes are present in the case table")
     if not exchanges:
         raise ValueError("At least one configured exchange is required")
+    reference = normalize_exchange(settings.get("exchange_reference", "HOSE"))
+    if reference not in exchanges:
+        raise ValueError(
+            f"exchange_reference={reference!r} is not in configured exchanges {exchanges}"
+        )
+    local_settings = dict(settings)
+    local_settings["exchange_reference"] = reference
 
     analysis_sample = sample[sample["exchange_group"].isin(exchanges)].copy()
     exchange_metrics = grouped_metrics(
@@ -120,7 +129,7 @@ def run_exchange_robustness(
     )
     exchange_model = exchange_interactions(
         analysis_sample,
-        settings,
+        local_settings,
         outcomes,
         exchanges,
     )
@@ -157,6 +166,8 @@ def run_covid_robustness(
     sample = prepare_regime_sample(cases, settings)
     outcomes = _configured_outcomes(sample, settings)
     exchanges = _configured_exchanges(settings)
+    if not outcomes:
+        raise ValueError("No configured robustness outcomes are present in the case table")
     covid = settings.get("covid", {})
     pre_years = [
         int(value)
