@@ -30,6 +30,7 @@ def main() -> None:
     output = resolve(config_path, config["paths"]["output_dir"])
 
     source = read_table(output, "cfs_auditor_source_status")
+    window = read_table(output, "cfs_auditor_analysis_window_status")
     status = read_table(output, "cfs_auditor_regime_status")
     coverage = read_table(output, "cfs_auditor_regime_coverage")
     metrics = read_table(output, "cfs_auditor_regime_metrics")
@@ -57,6 +58,7 @@ def main() -> None:
         "",
         "## Interpretation boundaries",
         "",
+        "- The primary evaluation window is fiscal years 2015-2025; earlier years may be retained only for rolling history or model training.",
         "- Auditor identity is joined after abnormal-CFO scores are generated and is never used to fit expected CFO.",
         "- Big4/non-Big4 results describe criterion-validity heterogeneity, not a causal effect of auditor choice.",
         "- Unknown and ambiguous auditor records are reported separately and are not silently coded as non-Big4.",
@@ -65,6 +67,7 @@ def main() -> None:
         "",
     ]
     add_table(lines, "Auditor source and schema", source, "No auditor source was evaluated.")
+    add_table(lines, "Primary analysis-year window", window, "No analysis-window status was produced.")
     add_table(lines, "Auditor-regime gate", status, "No auditor-regime status was produced.")
     add_table(lines, "Coverage in the primary analysis sample", coverage, "No coverage table was produced.")
     add_table(lines, "Criterion validity by auditor group", metrics, "No stratified metrics were produced.")
