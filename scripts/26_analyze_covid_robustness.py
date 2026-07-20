@@ -54,6 +54,8 @@ def main() -> None:
         bootstrap_seed=args.bootstrap_seed,
         outcomes=parse_csv_values(args.outcomes),
     )
+    if args.bootstrap_seed is not None:
+        settings["covid_bootstrap_seed"] = int(args.bootstrap_seed)
     covid = dict(settings.get("covid", {}))
     pre_years = parse_csv_years(args.pre_years)
     shock_years = parse_csv_years(args.shock_years)
