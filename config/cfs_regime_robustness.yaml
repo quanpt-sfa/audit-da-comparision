@@ -1,5 +1,6 @@
 cfs_regime_robustness:
   enabled: true
+  exchange_enabled: true
   case_table: cfs_shifting_proxy_common_primary_core_cases
   proxy_model: earnings_working_capital
   sample_mode: common_primary_models
@@ -19,6 +20,8 @@ cfs_regime_robustness:
 
   bootstrap_repetitions: 500
   bootstrap_seed: 240720
+  exchange_bootstrap_seed: 240720
+  covid_bootstrap_seed: 240721
 
   minimum_interaction_rows: 300
   minimum_interaction_positives: 20
@@ -30,7 +33,8 @@ cfs_regime_robustness:
   covid_fixed_effects: [fiscal_year, raw_exchange, industry_name]
 
   covid:
-    # This is a temporal-regime robustness test, not a causal treatment design.
+    enabled: true
+    # Temporal-regime robustness only; this is not a causal treatment design.
     pre_years: [2016, 2017, 2018, 2019]
     primary_shock_years: [2020, 2021]
     recovery_years: [2022, 2023, 2024, 2025]
