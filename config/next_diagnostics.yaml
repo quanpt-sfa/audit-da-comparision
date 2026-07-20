@@ -117,3 +117,28 @@ placebo:
   trim_fraction: 0.01
   random_seed: 20260719
   identity_tolerance: 1.0e-8
+
+calibration:
+  minimum_test_year: 2015
+  maximum_test_year: 2025
+  minimum_train_rows: 500
+  minimum_validation_rows: 100
+  winsor_lower: 0.01
+  winsor_upper: 0.99
+  random_seed: 20260719
+  student_t_df_grid: [3, 5, 10, 30]
+  candidate_models:
+    jones: [inv_assets, drev_scaled, ppe_scaled]
+    modified_jones: [inv_assets, drev_drec_scaled, ppe_scaled]
+    kothari: [inv_assets, drev_drec_scaled, ppe_scaled, roa]
+    nonlinear_modified_jones: [inv_assets, drev_drec_scaled, ppe_scaled, roa, loss, drev_drec_sq]
+
+model_families:
+  families:
+    classic: [jones, modified_jones]
+    performance_adjusted: [kothari, nonlinear_modified_jones]
+  tolerance_grid: [0.0, 0.0025, 0.005, 0.01]
+
+report:
+  special_year: 2024
+  pandemic_years: [2021, 2022]
