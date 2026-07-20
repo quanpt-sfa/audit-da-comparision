@@ -45,7 +45,6 @@ def build_runtime_config(
         "test_end_year": int(source_end_year),
     }
     settings["analysis_window"] = contract
-    # Backward-compatible aliases consumed by older modules.
     settings["minimum_year"] = contract["source_start_year"]
     settings["maximum_year"] = contract["source_end_year"]
     settings["training_start_year"] = contract["training_start_year"]
@@ -83,7 +82,6 @@ def main() -> None:
         default=2016,
         help="First theoretical out-of-sample test year (default: 2016)",
     )
-    # Retain the old CLI names as suppressed aliases.
     parser.add_argument("--analysis-minimum-year", type=int, help=argparse.SUPPRESS)
     parser.add_argument("--analysis-maximum-year", type=int, help=argparse.SUPPRESS)
     args = parser.parse_args()
@@ -155,6 +153,7 @@ def main() -> None:
             "22_analyze_auditor_regime.py",
             "20_write_cfs_shifting_validation_report.py",
             "23_write_auditor_regime_report.py",
+            "24_write_time_contract_report.py",
         ]:
             command = [
                 sys.executable,
