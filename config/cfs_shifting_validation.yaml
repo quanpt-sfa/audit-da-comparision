@@ -8,6 +8,12 @@ upstream:
   observed_cases_table: cfs_offset_channel_cases
 
 cfs_shifting_validation:
+  analysis_window:
+    source_start_year: 2015
+    source_end_year: 2025
+    training_start_year: 2015
+    test_start_year: 2016
+    test_end_year: 2025
   audited_label: audited
   unaudited_label: unaudited
   required_scope: consolidated
@@ -15,9 +21,10 @@ cfs_shifting_validation:
   statement_family_regex: 'cash[_ ]?flow'
   statement_family_preference: [cash_flow_indirect, cash_flow_direct]
   chunksize: 250000
-  minimum_year: 2018
+  minimum_year: 2015
   maximum_year: 2025
-  minimum_test_year: 2018
+  training_start_year: 2015
+  minimum_test_year: 2016
   maximum_test_year: 2025
   minimum_train_rows: 500
   ridge: 1.0e-8
@@ -27,8 +34,6 @@ cfs_shifting_validation:
   fold_winsor_upper: 0.99
   incremental_reference_model: raw_cfo_level
 
-  # Exact schema of data/raw/bctc_industry_icb.csv supplied for this project.
-  # The file is a static ticker-level mapping with no fiscal-year or numeric ICB-code column.
   industry_mapping:
     required: true
     ticker_column: issuer_ticker
@@ -38,9 +43,6 @@ cfs_shifting_validation:
     financial_industry_values: ['Tài chính', 'Ngân hàng']
     missing_industry_is_unknown: true
 
-  # Apply these restrictions before constructing firm history and before every
-  # rolling-fold fit/test. This prevents financial firms from contaminating the
-  # expected-CFO coefficients used for the non-financial research population.
   estimation_sample:
     require_nonfinancial: true
     require_listed: true
@@ -55,7 +57,6 @@ cfs_shifting_validation:
     earnings_working_capital: [inv_assets, pre_pat_scaled, pre_drev_scaled, pre_drec_scaled, pre_loss]
     earnings_working_capital_history: [inv_assets, pre_pat_scaled, pre_drev_scaled, pre_drec_scaled, pre_loss, firm_prior_cfo_median]
 
-  # Primary comparison excludes firm-history because its first observation per issuer is unavailable.
   common_primary_models:
     - sales_level_only
     - roychowdhury_sales
@@ -64,8 +65,6 @@ cfs_shifting_validation:
     - raw_cfo_level
     - within_year_cfo_percentile
 
-  # All-model comparison quantifies the sample cost and incremental value of
-  # both the standalone history score and the nested EWC+history model.
   common_all_models:
     - sales_level_only
     - roychowdhury_sales
@@ -82,7 +81,6 @@ cfs_shifting_validation:
     sample_mode: common_all_models
     sample_restriction: analysis_core
 
-  # Backward-compatible alias used only by older scripts.
   common_sample_models:
     - sales_level_only
     - roychowdhury_sales
