@@ -53,6 +53,43 @@ def _constant_column(frame: pd.DataFrame, column: str, expected: int) -> bool:
     return values == {expected}
 
 
+def _lookback_boundary_status(
+    panel: pd.DataFrame,
+    source_start_year: int,
+) -> tuple[bool, int, int, str]:
+    if panel.empty or "fiscal_year" not in panel.columns:
+        return False, 0, 0, ""
+    first_year = panel.loc[
+        pd.to_numeric(panel["fiscal_year"], errors="coerce").eq(source_start_year)
+    ]
+    lag_dependent = sorted(
+        set(
+            [column for column in panel.columns if column.startswith("lag_")]
+            + [
+                "drev",
+                "drec",
+                "ta_balance_sheet",
+                "ta_scaled",
+                "inv_assets",
+                "drev_scaled",
+                "drec_scaled",
+                "drev_drec_scaled",
+                "ppe_scaled",
+                "roa",
+                "cfo_scaled",
+                "drev_drec_sq",
+            ]
+        )
+        & set(panel.columns)
+    )
+    if first_year.empty:
+        return False, 0, 0, "|".join(lag_dependent)
+    if not lag_dependent:
+        return True, len(first_year), 0, ""
+    nonmissing = int(first_year[lag_dependent].notna().sum().sum())
+    return nonmissing == 0, len(first_year), nonmissing, "|".join(lag_dependent)
+
+
 def time_contract_gate(
     settings: dict,
     panel: pd.DataFrame,
@@ -68,7 +105,10 @@ def time_contract_gate(
     fold_min, fold_max = _year_bounds(folds)
     primary_min, primary_max = _year_bounds(primary_cases)
 
-    source_ok = all(
+    panel_starts_at_contract = (
+        not pd.isna(panel_min) and int(panel_min) == window.source_start_year
+    )
+    source_ok = panel_starts_at_contract and all(
         _inside(value, window.source_start_year, window.source_end_year)
         for value in (
             panel_min,
@@ -103,6 +143,12 @@ def time_contract_gate(
             folds["source_panel_minimum_year_actual"], errors="coerce"
         ).dropna().ge(window.training_start_year).all()
     )
+    (
+        lookback_ok,
+        first_year_rows,
+        first_year_nonmissing_lag_cells,
+        audited_lag_columns,
+    ) = _lookback_boundary_status(panel, window.source_start_year)
     evidence_ok = all(
         not frame.empty
         for frame in (panel, observed, line_items, folds, primary_cases)
@@ -113,6 +159,7 @@ def time_contract_gate(
         and test_ok
         and fold_contract_ok
         and source_actual_ok
+        and lookback_ok
         and evidence_ok
         else "FAILED"
     )
@@ -131,10 +178,15 @@ def time_contract_gate(
                 "expected_cfo_fold_maximum_year": fold_max,
                 "common_primary_minimum_year": primary_min,
                 "common_primary_maximum_year": primary_max,
+                "panel_starts_at_source_contract": panel_starts_at_contract,
                 "source_window_pass": source_ok,
                 "test_window_pass": test_ok,
                 "expected_cfo_contract_metadata_pass": fold_contract_ok,
                 "expected_cfo_actual_source_pass": source_actual_ok,
+                "zero_pre_2015_lookback_pass": lookback_ok,
+                "source_start_year_rows": first_year_rows,
+                "source_start_year_nonmissing_lag_cells": first_year_nonmissing_lag_cells,
+                "lag_dependent_columns_checked": audited_lag_columns,
                 "required_evidence_present": evidence_ok,
                 "common_sample_rule": "intersection of prespecified model availability by issuer-year",
             }
