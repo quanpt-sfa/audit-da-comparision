@@ -42,7 +42,7 @@ For test year `t`, the permissible training set is:
 
 No observation before 2015 may enter coefficient estimation, lag construction, scaling denominators, changes in accounting variables, winsorization bounds, firm-history construction, stacking, validation weights or expected-CFO estimation.
 
-For the first theoretical test year, 2016, no pre-validation TT200 history exists before the 2015 validation year. The Bayesian signal model therefore uses the prespecified equal-weight fallback for candidate models rather than reaching back to 2014. Candidate models themselves are fitted only on eligible 2015 training rows.
+For the first theoretical test year, 2016, lag-dependent DA features from fiscal year 2015 are structurally unavailable because their permissible lookback cannot precede 2015. The Bayesian and OLS DA folds therefore record insufficient finite training data and skip 2016 rather than reaching back to 2014. Their effective test period begins in 2017 or the first later year satisfying the finite-training gate. The equal-weight stacking fallback is used only when candidate models have eligible TT200 training rows but no sufficient pre-validation history.
 
 ## Target independence
 
