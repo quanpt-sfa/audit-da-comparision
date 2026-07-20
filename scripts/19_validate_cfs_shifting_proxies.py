@@ -6,6 +6,7 @@ from pathlib import Path
 import pandas as pd
 
 from _next_diag_common import load_config, resolve
+from audit_da.analysis_window import window_from_section
 from audit_da.cfs_completion import (
     restrict_estimation_panel,
     restrict_to_estimation_keys,
@@ -25,6 +26,37 @@ def read_table(output: Path, name: str) -> pd.DataFrame:
     raise FileNotFoundError(f"Required upstream table not found: {plain} or {gz}")
 
 
+def _window_status(
+    raw_panel: pd.DataFrame,
+    source_panel: pd.DataFrame,
+    cases: pd.DataFrame,
+    settings: dict,
+) -> pd.DataFrame:
+    window = window_from_section(settings)
+    case_year = pd.to_numeric(cases.get("fiscal_year"), errors="coerce")
+    return pd.DataFrame(
+        [
+            {
+                "status": "PASS",
+                **window.as_dict(),
+                "panel_rows_before": len(raw_panel),
+                "panel_rows_after_source_window": len(source_panel),
+                "panel_minimum_year_after": int(source_panel["fiscal_year"].min())
+                if not source_panel.empty
+                else pd.NA,
+                "panel_maximum_year_after": int(source_panel["fiscal_year"].max())
+                if not source_panel.empty
+                else pd.NA,
+                "observed_case_rows_source_window": int(
+                    window.target_mask(case_year).sum()
+                ),
+                "training_rule": "training_start_year <= fiscal_year <= test_year - 1",
+                "comparison_rule": "common issuer-year intersection across prespecified models",
+            }
+        ]
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
@@ -37,9 +69,14 @@ def main() -> None:
     config_path, config = load_config(args.config)
     output = resolve(config_path, config["paths"]["output_dir"])
     settings = dict(config["cfs_shifting_validation"])
-    panel = pd.read_csv(
+    window = window_from_section(settings)
+    raw_panel = pd.read_csv(
         resolve(config_path, config["paths"]["panel_input"]), low_memory=False
     )
+    panel = raw_panel.loc[window.source_mask(raw_panel["fiscal_year"])].copy()
+    panel["fiscal_year"] = pd.to_numeric(
+        panel["fiscal_year"], errors="coerce"
+    ).astype(int)
 
     auxiliary: dict[str, pd.DataFrame] = {}
     industry_value = config.get("paths", {}).get("industry_input")
@@ -83,12 +120,21 @@ def main() -> None:
             "observed_cases_table", "cfs_offset_channel_cases"
         ),
     )
+    case_year = pd.to_numeric(cases["fiscal_year"], errors="coerce")
+    cases = cases.loc[window.target_mask(case_year)].copy()
+    cases["fiscal_year"] = case_year.loc[cases.index].astype(int)
+
     line_items = read_table(output, "cfs_line_item_panel")
+    item_year = pd.to_numeric(line_items["fiscal_year"], errors="coerce")
+    line_items = line_items.loc[window.target_mask(item_year)].copy()
+    line_items["fiscal_year"] = item_year.loc[line_items.index].astype(int)
+
+    auxiliary["cfs_analysis_window_status"] = _window_status(
+        raw_panel, panel, cases, settings
+    )
 
     # Use the identical issuer-year population for fitting, prediction,
-    # validation, and detailed line-item reconciliation. This prevents
-    # financial or unknown-industry observations from leaking back through an
-    # upstream outcome or line-item table.
+    # validation, and detailed line-item reconciliation.
     cases = restrict_to_estimation_keys(cases, estimation_panel)
     line_items = restrict_to_estimation_keys(line_items, estimation_panel)
 
