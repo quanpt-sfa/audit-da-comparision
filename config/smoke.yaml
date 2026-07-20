@@ -6,6 +6,12 @@ paths:
   report_output: artifacts/SMOKE_REPORT.md
   baseline_output: artifacts/smoke_ols_baselines.csv.gz
   profile_output: artifacts/input_profile.json
+analysis_window:
+  source_start_year: 2015
+  source_end_year: 2025
+  training_start_year: 2015
+  test_start_year: 2023
+  test_end_year: 2024
 input:
   chunksize: 250000
   audited_label: audited
@@ -42,6 +48,7 @@ panel:
   winsor_lower: 0.01
   winsor_upper: 0.99
 models:
+  training_start_year: 2015
   minimum_train_rows: 500
   minimum_validation_rows: 100
   minimum_firm_history: 1
