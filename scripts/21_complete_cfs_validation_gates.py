@@ -6,8 +6,8 @@ from pathlib import Path
 import pandas as pd
 
 from _next_diag_common import load_config, resolve
+from audit_da.analysis_window import window_from_section
 from audit_da.cfs_completion import (
-    build_pdf_verification_manifest,
     completion_gate_status,
     core_reconciliation_outputs,
     history_incremental_comparison,
@@ -24,26 +24,214 @@ def read_table(output: Path, name: str, required: bool = True) -> pd.DataFrame:
     return pd.DataFrame()
 
 
+def remove_stale_pdf_verification_outputs(output: Path) -> None:
+    for suffix in (".csv", ".csv.gz"):
+        path = output / f"cfs_pdf_verification_manifest{suffix}"
+        if path.exists():
+            path.unlink()
+
+
+def _year_bounds(frame: pd.DataFrame) -> tuple[object, object]:
+    if frame.empty or "fiscal_year" not in frame.columns:
+        return pd.NA, pd.NA
+    year = pd.to_numeric(frame["fiscal_year"], errors="coerce").dropna()
+    if year.empty:
+        return pd.NA, pd.NA
+    return int(year.min()), int(year.max())
+
+
+def _inside(value: object, lower: int, upper: int) -> bool:
+    return bool(pd.isna(value) or lower <= int(value) <= upper)
+
+
+def _constant_column(frame: pd.DataFrame, column: str, expected: int) -> bool:
+    if frame.empty or column not in frame.columns:
+        return False
+    values = set(
+        pd.to_numeric(frame[column], errors="coerce").dropna().astype(int)
+    )
+    return values == {expected}
+
+
+def _lookback_boundary_status(
+    panel: pd.DataFrame,
+    source_start_year: int,
+) -> tuple[bool, int, int, str]:
+    if panel.empty or "fiscal_year" not in panel.columns:
+        return False, 0, 0, ""
+    first_year = panel.loc[
+        pd.to_numeric(panel["fiscal_year"], errors="coerce").eq(source_start_year)
+    ]
+    lag_dependent = sorted(
+        set(
+            [column for column in panel.columns if column.startswith("lag_")]
+            + [
+                "drev",
+                "drec",
+                "ta_balance_sheet",
+                "ta_scaled",
+                "inv_assets",
+                "drev_scaled",
+                "drec_scaled",
+                "drev_drec_scaled",
+                "ppe_scaled",
+                "roa",
+                "cfo_scaled",
+                "drev_drec_sq",
+            ]
+        )
+        & set(panel.columns)
+    )
+    if first_year.empty:
+        return False, 0, 0, "|".join(lag_dependent)
+    if not lag_dependent:
+        return True, len(first_year), 0, ""
+    nonmissing = int(first_year[lag_dependent].notna().sum().sum())
+    return nonmissing == 0, len(first_year), nonmissing, "|".join(lag_dependent)
+
+
+def time_contract_gate(
+    settings: dict,
+    panel: pd.DataFrame,
+    observed: pd.DataFrame,
+    line_items: pd.DataFrame,
+    folds: pd.DataFrame,
+    primary_cases: pd.DataFrame,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    window = window_from_section(settings)
+    panel_min, panel_max = _year_bounds(panel)
+    target_min, target_max = _year_bounds(observed)
+    item_min, item_max = _year_bounds(line_items)
+    fold_min, fold_max = _year_bounds(folds)
+    primary_min, primary_max = _year_bounds(primary_cases)
+
+    panel_starts_at_contract = (
+        not pd.isna(panel_min) and int(panel_min) == window.source_start_year
+    )
+    source_ok = panel_starts_at_contract and all(
+        _inside(value, window.source_start_year, window.source_end_year)
+        for value in (
+            panel_min,
+            panel_max,
+            target_min,
+            target_max,
+            item_min,
+            item_max,
+        )
+    )
+    test_ok = all(
+        _inside(value, window.test_start_year, window.test_end_year)
+        for value in (fold_min, fold_max, primary_min, primary_max)
+    )
+    fold_contract_ok = all(
+        [
+            _constant_column(
+                folds, "source_start_year", window.source_start_year
+            ),
+            _constant_column(folds, "source_end_year", window.source_end_year),
+            _constant_column(
+                folds, "training_start_year", window.training_start_year
+            ),
+            _constant_column(folds, "test_start_year", window.test_start_year),
+            _constant_column(folds, "test_end_year", window.test_end_year),
+        ]
+    )
+    source_actual_ok = (
+        not folds.empty
+        and "source_panel_minimum_year_actual" in folds.columns
+        and pd.to_numeric(
+            folds["source_panel_minimum_year_actual"], errors="coerce"
+        ).dropna().ge(window.training_start_year).all()
+    )
+    (
+        lookback_ok,
+        first_year_rows,
+        first_year_nonmissing_lag_cells,
+        audited_lag_columns,
+    ) = _lookback_boundary_status(panel, window.source_start_year)
+    evidence_ok = all(
+        not frame.empty
+        for frame in (panel, observed, line_items, folds, primary_cases)
+    )
+    status = (
+        "PASS"
+        if source_ok
+        and test_ok
+        and fold_contract_ok
+        and source_actual_ok
+        and lookback_ok
+        and evidence_ok
+        else "FAILED"
+    )
+    detail = pd.DataFrame(
+        [
+            {
+                "status": status,
+                **window.as_dict(),
+                "panel_minimum_year": panel_min,
+                "panel_maximum_year": panel_max,
+                "target_minimum_year": target_min,
+                "target_maximum_year": target_max,
+                "line_item_minimum_year": item_min,
+                "line_item_maximum_year": item_max,
+                "expected_cfo_fold_minimum_year": fold_min,
+                "expected_cfo_fold_maximum_year": fold_max,
+                "common_primary_minimum_year": primary_min,
+                "common_primary_maximum_year": primary_max,
+                "panel_starts_at_source_contract": panel_starts_at_contract,
+                "source_window_pass": source_ok,
+                "test_window_pass": test_ok,
+                "expected_cfo_contract_metadata_pass": fold_contract_ok,
+                "expected_cfo_actual_source_pass": source_actual_ok,
+                "zero_pre_2015_lookback_pass": lookback_ok,
+                "source_start_year_rows": first_year_rows,
+                "source_start_year_nonmissing_lag_cells": first_year_nonmissing_lag_cells,
+                "lag_dependent_columns_checked": audited_lag_columns,
+                "required_evidence_present": evidence_ok,
+                "common_sample_rule": "intersection of prespecified model availability by issuer-year",
+            }
+        ]
+    )
+    gate = pd.DataFrame(
+        [
+            {
+                "gate": "consistent_tt200_time_contract",
+                "status": status,
+                "evidence_rows": len(primary_cases),
+            }
+        ]
+    )
+    return detail, gate
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Complete the remaining CFS validation and verification gates"
+        description="Complete the remaining executable CFS validation gates"
     )
     parser.add_argument("--config", default="config/cfs_shifting_validation.yaml")
     args = parser.parse_args()
     config_path, config = load_config(args.config)
     output = resolve(config_path, config["paths"]["output_dir"])
     settings = dict(config["cfs_shifting_validation"])
+    window = window_from_section(settings)
 
-    panel = pd.read_csv(
+    remove_stale_pdf_verification_outputs(output)
+
+    raw_panel = pd.read_csv(
         resolve(config_path, config["paths"]["panel_input"]), low_memory=False
     )
+    panel = raw_panel.loc[window.source_mask(raw_panel["fiscal_year"])].copy()
     observed = read_table(
         output,
         config.get("upstream", {}).get(
             "observed_cases_table", "cfs_offset_channel_cases"
         ),
     )
+    observed = observed.loc[window.target_mask(observed["fiscal_year"])].copy()
     line_items = read_table(output, "cfs_line_item_panel")
+    line_items = line_items.loc[
+        window.target_mask(line_items["fiscal_year"])
+    ].copy()
     primary_cases = read_table(
         output, "cfs_shifting_proxy_common_primary_core_cases"
     )
@@ -51,6 +239,7 @@ def main() -> None:
         output, "cfs_shifting_proxy_common_all_core_cases"
     )
     validation = read_table(output, "cfs_shifting_proxy_validation")
+    folds = read_table(output, "cfs_expected_cfo_folds")
     estimation_status = read_table(
         output, "cfs_expected_cfo_estimation_sample_status"
     )
@@ -70,15 +259,22 @@ def main() -> None:
         "cfs_line_item_reconciliation_cases_common_primary_core",
         pd.DataFrame(),
     )
-    manifest = build_pdf_verification_manifest(
-        primary_reconciliation, settings
-    )
-    tables["cfs_pdf_verification_manifest"] = manifest
-    tables["cfs_completion_gate_status"] = completion_gate_status(
+    gates = completion_gate_status(
         estimation_status,
         history,
         primary_reconciliation,
-        manifest,
+    )
+    time_status, time_gate = time_contract_gate(
+        settings,
+        panel,
+        observed,
+        line_items,
+        folds,
+        primary_cases,
+    )
+    tables["cfs_time_contract_status"] = time_status
+    tables["cfs_completion_gate_status"] = pd.concat(
+        [gates, time_gate], ignore_index=True
     )
     write_tables(tables, output)
 

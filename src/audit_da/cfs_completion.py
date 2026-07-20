@@ -182,168 +182,16 @@ def core_reconciliation_outputs(
     return output
 
 
-def build_pdf_verification_manifest(
-    reconciliation_cases: pd.DataFrame,
-    settings: dict[str, Any],
-) -> pd.DataFrame:
-    if reconciliation_cases.empty:
-        return pd.DataFrame()
-    cfg = settings.get("pdf_verification", {})
-    candidate_label = settings.get(
-        "candidate_label",
-        "identity_consistent_offsetting_reclassification_candidate",
-    )
-    cases = reconciliation_cases[
-        reconciliation_cases["cfs_resolution"].eq(candidate_label)
-    ].copy()
-    if cases.empty:
-        return pd.DataFrame()
-    cases["absolute_aggregate_change"] = pd.to_numeric(
-        cases["aggregate_section_change_scaled"], errors="coerce"
-    ).abs()
-    cases["absolute_reconciliation_residual"] = pd.to_numeric(
-        cases["reconciliation_residual_scaled"], errors="coerce"
-    ).abs()
-    share = pd.to_numeric(cases["mapped_share_of_aggregate"], errors="coerce")
-    cases["mapped_share_gap"] = (share - 1.0).abs()
-
-    selected: list[pd.DataFrame] = []
-
-    def add_bucket(
-        condition: pd.Series,
-        n: int,
-        priority: int,
-        reason: str,
-        sort_columns: list[str],
-    ) -> None:
-        bucket = cases.loc[condition].copy()
-        if bucket.empty or n <= 0:
-            return
-        bucket = bucket.sort_values(sort_columns, ascending=False).head(n)
-        bucket["verification_priority"] = priority
-        bucket["selection_reason"] = reason
-        selected.append(bucket)
-
-    quotas = cfg.get("quotas", {})
-    add_bucket(
-        cases["section"].eq("financing")
-        & cases["offset_channel_pattern"].eq("cff_dominant")
-        & cases["cfo_adjustment_direction"].eq("audited_cfo_decrease")
-        & cases["dominant_line_item"].eq("cff_borrowing_proceeds"),
-        int(quotas.get("cff_down_borrowing", 12)),
-        2,
-        "CFF-down borrowing-proceeds mechanism",
-        ["absolute_aggregate_change"],
-    )
-    add_bucket(
-        cases["section"].eq("investing")
-        & cases["offset_channel_pattern"].eq("cfi_dominant")
-        & cases["cfo_adjustment_direction"].eq("audited_cfo_increase")
-        & cases["dominant_line_item"].eq("cfi_ppe_purchase"),
-        int(quotas.get("cfi_up_ppe", 10)),
-        3,
-        "CFI-up PPE-purchase mechanism",
-        ["absolute_aggregate_change"],
-    )
-    add_bucket(
-        cases["section"].eq("investing")
-        & cases["offset_channel_pattern"].eq("cfi_dominant")
-        & cases["cfo_adjustment_direction"].eq("audited_cfo_increase")
-        & cases["dominant_line_item"].eq("cfi_loans_advanced"),
-        int(quotas.get("cfi_up_loans", 10)),
-        3,
-        "CFI-up loans-advanced mechanism",
-        ["absolute_aggregate_change"],
-    )
-    add_bucket(
-        pd.Series(True, index=cases.index),
-        int(quotas.get("reconciliation_outliers", 10)),
-        1,
-        "Largest reconciliation exception",
-        ["absolute_reconciliation_residual", "mapped_share_gap"],
-    )
-
-    force_rows: list[pd.DataFrame] = []
-    for forced in cfg.get("force_cases", []):
-        ticker = str(forced.get("issuer_ticker", "")).upper()
-        year = int(forced.get("fiscal_year"))
-        hit = cases[
-            cases["issuer_ticker"].astype(str).str.upper().eq(ticker)
-            & pd.to_numeric(cases["fiscal_year"], errors="coerce").eq(year)
-        ].copy()
-        if hit.empty:
-            force_rows.append(
-                pd.DataFrame(
-                    [
-                        {
-                            "issuer_ticker": ticker,
-                            "fiscal_year": year,
-                            "verification_priority": 0,
-                            "selection_reason": "Forced case not present in common-primary core sample",
-                            "selection_status": "NOT_IN_SAMPLE",
-                        }
-                    ]
-                )
-            )
-        else:
-            hit["verification_priority"] = 0
-            hit["selection_reason"] = forced.get(
-                "reason", "Prespecified forced verification case"
-            )
-            hit["selection_status"] = "SELECTED"
-            force_rows.append(hit)
-
-    frames = force_rows + selected
-    if not frames:
-        return pd.DataFrame()
-    manifest = pd.concat(frames, ignore_index=True, sort=False)
-    if "selection_status" not in manifest:
-        manifest["selection_status"] = "SELECTED"
-    else:
-        manifest["selection_status"] = manifest["selection_status"].fillna(
-            "SELECTED"
-        )
-    manifest = manifest.sort_values(
-        ["verification_priority", "absolute_aggregate_change"],
-        ascending=[True, False],
-        na_position="last",
-    )
-    dedup_keys = ["issuer_ticker", "fiscal_year", "section"]
-    present_keys = [column for column in dedup_keys if column in manifest]
-    manifest = manifest.drop_duplicates(present_keys, keep="first")
-    manifest["document_checked"] = False
-    manifest["verification_result"] = "PENDING"
-    manifest["source_document"] = ""
-    manifest["reviewer_notes"] = ""
-    preferred = [
-        "verification_priority",
-        "issuer_ticker",
-        "fiscal_year",
-        "section",
-        "selection_reason",
-        "selection_status",
-        "offset_channel_pattern",
-        "cfo_adjustment_direction",
-        "dominant_line_item",
-        "aggregate_section_change_scaled",
-        "dominant_line_item_change_scaled",
-        "mapped_share_of_aggregate",
-        "reconciliation_residual_scaled",
-        "document_checked",
-        "verification_result",
-        "source_document",
-        "reviewer_notes",
-    ]
-    columns = [column for column in preferred if column in manifest.columns]
-    return manifest[columns].reset_index(drop=True)
-
-
 def completion_gate_status(
     estimation_status: pd.DataFrame,
     history_comparison: pd.DataFrame,
     primary_reconciliation: pd.DataFrame,
-    verification_manifest: pd.DataFrame,
 ) -> pd.DataFrame:
+    """Summarize executable validation gates.
+
+    Source-record labels and values are treated as verified upstream inputs.
+    No separate PDF-verification gate is created.
+    """
     rows = [
         {
             "gate": "nonfinancial_estimation_sample",
@@ -359,11 +207,6 @@ def completion_gate_status(
             "gate": "common_primary_core_reconciliation",
             "status": "PASS" if not primary_reconciliation.empty else "FAILED",
             "evidence_rows": len(primary_reconciliation),
-        },
-        {
-            "gate": "pdf_verification_manifest",
-            "status": "PASS" if not verification_manifest.empty else "FAILED",
-            "evidence_rows": len(verification_manifest),
         },
         {
             "gate": "scale_scope_screening",

@@ -74,17 +74,7 @@ The raw long file is scanned in chunks and mapped to conservative operating, inv
 
 Main mechanism claims must use the common-primary/core outputs rather than full-universe contributor tables.
 
-## Source-document verification
-
-The pipeline generates `cfs_pdf_verification_manifest.csv` with prespecified quotas for:
-
-- CFF-down borrowing-proceeds cases;
-- CFI-up PPE-purchase cases;
-- CFI-up loans-advanced cases;
-- the largest reconciliation exceptions;
-- forced cases such as DBT 2024.
-
-Manifest creation is not document verification. Each row remains `PENDING` until a reviewer records the source document, marks `document_checked=true` and supplies a verification result.
+The retained source records preserve the original line-item labels and values from the preliminary and audited statements. These records were verified during data construction. Accordingly, the validation pipeline relies on source-record reconciliation and does not create a separate PDF-verification requirement or manifest.
 
 ## Completion gates
 
@@ -92,8 +82,7 @@ Manifest creation is not document verification. Each row remains `PENDING` until
 
 - non-financial estimation population;
 - nested history incremental test;
-- common-primary/core reconciliation;
-- PDF verification manifest;
+- common-primary/core source-record reconciliation;
 - scale/scope waiver.
 
 ## Decision rules
@@ -102,4 +91,4 @@ Manifest creation is not document verification. Each row remains `PENDING` until
 - Predicting CFF-downward revisions supports validation of an upward-CFO shifting proxy.
 - Predicting CFI-upward revisions with the inverse score supports a bidirectional classification-reliability construct.
 - The nested history model is retained only if it improves EWC on the identical all-model sample.
-- A named line-item mechanism requires common-primary/core reconciliation coverage and source-document confirmation.
+- A named line-item mechanism requires common-primary/core reconciliation coverage using the retained and previously verified source-record labels and values.

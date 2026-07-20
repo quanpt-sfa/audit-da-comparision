@@ -1,0 +1,150 @@
+auditor_regime:
+  enabled: true
+  required: true
+  fail_pipeline_if_unavailable: false
+  case_table: cfs_shifting_proxy_common_primary_core_cases
+
+  analysis_window:
+    source_start_year: 2015
+    source_end_year: 2025
+    training_start_year: 2015
+    test_start_year: 2016
+    test_end_year: 2025
+  analysis_minimum_year: 2016
+  analysis_maximum_year: 2025
+
+  source_preference: [auditor_input]
+  explicit_source_paths:
+    - data/raw/bctc_audit_annual_long.csv
+    - data/raw/bctc_audit_annual_long.csv.gz
+  source_globs:
+    - data/raw/bctc_audit_annual_long.csv
+    - data/raw/bctc_audit_annual_long.csv.gz
+
+  project_source_contract:
+    schema: BCTC_AUDIT_ANNUAL_LONG_V1
+    ticker_column: issuer_ticker
+    year_column: year
+    period_type_column: period_type
+    period_type_value: annual
+    statement_scope_column: statement_scope
+    statement_scope_value: Hợp nhất
+    audit_status_column: audit_status
+    audit_status_value: audited
+    audit_indicator_column: audit_indicator
+    audit_indicator_value: audit_firm
+    auditor_name_column: audit_firm_raw
+    auditor_value_check_column: audit_value_raw
+    source_file_column: source_file
+
+  auditor_name_column_candidates:
+    - audit_firm_raw
+    - audit_firm_name
+    - auditor_name
+    - audit_firm
+  ticker_column_candidates: [issuer_ticker, ticker, stock_code, symbol]
+  year_column_candidates: [fiscal_year, year, report_year]
+  audit_status_column_candidates: [audit_status]
+  scope_column_candidates: [statement_scope]
+  indicator_column_candidates: [audit_indicator]
+  value_column_candidates: [audit_value_raw]
+  auditor_indicator_values: [audit_firm]
+
+  proxy_model: earnings_working_capital
+  sample_mode: common_primary_models
+  sample_restriction: analysis_core
+  outcomes:
+    - any_candidate
+    - audited_cfo_decrease
+    - audited_cfo_increase
+    - cff_down_candidate
+    - cfi_up_candidate
+  reported_groups: [BIG4, NON_BIG4, UNKNOWN, AMBIGUOUS]
+  minimum_known_coverage: 0.80
+  minimum_group_rows: 100
+  bootstrap_repetitions: 500
+  bootstrap_seed: 240719
+  minimum_interaction_rows: 300
+  minimum_interaction_positives: 20
+  interaction_ridge: 1.0e-6
+  interaction_max_iter: 100
+  interaction_tolerance: 1.0e-8
+  continuous_controls: [log_lag_assets, pre_cfo_scaled]
+  fixed_effects: [fiscal_year, raw_exchange, industry_name]
+  balance_continuous: [log_lag_assets, pre_cfo_scaled, abnormal_cfo_proxy]
+  balance_categorical: [raw_exchange, industry_name, fiscal_year]
+  chunksize: 250000
+
+  switch_event_study:
+    enabled: true
+    direct_case_table: cfs_offset_channel_cases
+    line_item_table: cfs_line_item_panel
+    pre_periods: 2
+    post_periods: 2
+    reference_event_time: -1
+    one_event_per_direction: true
+    exact_match_columns: [raw_exchange, industry_name]
+    minimum_controls_per_event: 5
+    minimum_events: 20
+    scale_column_candidates: [lag_assets_common, lag_assets, lag_assets_pre]
+    borrowing_intensity_event_times: [-2, -1]
+    outcomes:
+      - any_candidate
+      - audited_cfo_decrease
+      - audited_cfo_increase
+      - cff_down_candidate
+      - cfi_up_candidate
+      - signed_cfo_correction
+      - absolute_cfo_correction
+      - borrowing_proceeds_correction_scaled
+      - debt_repayments_correction_scaled
+
+  dynamic_did:
+    enabled: true
+    horizons: [-2, 0, 1, 2]
+    outcomes:
+      - any_candidate
+      - cff_down_candidate
+      - cfi_up_candidate
+      - signed_cfo_correction
+      - absolute_cfo_correction
+    minimum_events: 20
+    minimum_overlap_treated: 20
+    minimum_overlap_controls: 50
+    overlap_numeric_covariates:
+      - lag_assets_common
+      - lag_assets
+      - pre_cfo_scaled
+      - pre_event_borrowing_intensity
+      - signed_cfo_correction
+    overlap_categorical_covariates: [cohort_year, raw_exchange, industry_name]
+    propensity_c: 1.0
+    propensity_max_iter: 1000
+    propensity_clip_lower: 0.01
+    propensity_clip_upper: 0.99
+    bootstrap_repetitions: 500
+    bootstrap_seed: 240721
+
+  yearly_auc_heterogeneity:
+    enabled: true
+    case_table: cfs_shifting_proxy_common_primary_core_cases
+    proxy_model: earnings_working_capital
+    sample_mode: common_primary_models
+    sample_restriction: analysis_core
+    outcomes:
+      - any_candidate
+      - audited_cfo_decrease
+      - audited_cfo_increase
+      - cff_down_candidate
+      - cfi_up_candidate
+    minimum_year_positives: 10
+    minimum_year_negatives: 10
+    bootstrap_repetitions: 500
+    bootstrap_seed: 240722
+    minimum_interaction_rows: 300
+    minimum_interaction_positives: 20
+    interaction_ridge: 1.0e-6
+    interaction_max_iter: 100
+    interaction_tolerance: 1.0e-8
+    continuous_controls: [lag_assets, pre_cfo_scaled]
+    fixed_effects: [raw_exchange, industry_name]

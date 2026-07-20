@@ -4,6 +4,13 @@ paths:
   output_dir: artifacts/next_diagnostics
   audit_metadata_input: data/processed/audit_metadata.csv
 
+analysis_window:
+  source_start_year: 2015
+  source_end_year: 2025
+  training_start_year: 2015
+  test_start_year: 2016
+  test_end_year: 2025
+
 data:
   audited_label: audited
   unaudited_label: unaudited
@@ -25,6 +32,8 @@ decomposition:
   repeated_candidate_min_years: 2
 
 cfs_identity:
+  minimum_year: 2015
+  maximum_year: 2025
   primary_model: modified_jones
   primary_benchmark: audited_reference
   absolute_tolerance_vnd: 1000.0
@@ -61,7 +70,8 @@ component_placebo:
   random_seed: 20260720
 
 cfs_deep_dive:
-  minimum_year: 2018
+  minimum_year: 2015
+  maximum_year: 2025
   candidate_label: identity_consistent_offsetting_reclassification_candidate
   direction_tolerance: 0.0
   dominant_offset_share_threshold: 0.60
@@ -119,7 +129,8 @@ placebo:
   identity_tolerance: 1.0e-8
 
 calibration:
-  minimum_test_year: 2018
+  training_start_year: 2015
+  minimum_test_year: 2016
   maximum_test_year: 2025
   minimum_train_rows: 500
   minimum_validation_rows: 100

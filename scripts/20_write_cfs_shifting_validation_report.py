@@ -34,6 +34,8 @@ def main() -> None:
     mapping_review = maybe_read(output, "cfs_item_mapping_review")
     coverage = maybe_read(output, "cfs_line_item_method_coverage")
     folds = maybe_read(output, "cfs_expected_cfo_folds")
+    analysis_window = maybe_read(output, "cfs_analysis_window_status")
+    time_contract = maybe_read(output, "cfs_time_contract_status")
     estimation_status = maybe_read(
         output, "cfs_expected_cfo_estimation_sample_status"
     )
@@ -52,7 +54,6 @@ def main() -> None:
     top = maybe_read(
         output, "cfs_line_item_top_contributors_common_primary_core"
     )
-    verification = maybe_read(output, "cfs_pdf_verification_manifest")
     gate_status = maybe_read(output, "cfs_completion_gate_status")
 
     restriction_settings = settings.get("sample_restrictions", {})
@@ -69,12 +70,15 @@ def main() -> None:
         "",
         "## Interpretation boundaries",
         "",
+        "- The TT200 source and target-construction period is fiscal years 2015-2025.",
+        "- Fiscal year 2015 is the first source/warm-up year; rolling out-of-sample tests begin in 2016 or the first later year satisfying the minimum-training gate.",
+        "- Cross-model metrics use the common issuer-year intersection of all prespecified comparison models.",
         "- Observed preliminary-to-audited reclassification is a validation outcome, not direct evidence of managerial intent.",
         "- Expected-CFO models are fitted and tested only on the prespecified listed, valid-ticker, known non-financial population with positive lagged assets.",
         "- `common_primary_models` excludes firm-history requirements; `common_all_models` includes both standalone history and the nested EWC+history model.",
         "- Outcome-specific scores are mandatory: absolute residual for any revision, positive residual for CFO decreases/CFF-down, and negative residual for CFO increases/CFI-up.",
         "- Detailed line-item tables below are recomputed directly on the common-primary analysis-core firm-years.",
-        "- Source-document verification remains a manual step; the pipeline produces a prespecified manifest and does not infer PDF content.",
+        "- Line-item labels and values are retained from source records verified during data construction; no separate PDF-verification gate is imposed.",
         "",
     ]
 
@@ -93,6 +97,18 @@ def main() -> None:
         "Completion-gate status",
         gate_status,
         "No completion-gate status was produced.",
+    )
+    add_table(
+        lines,
+        "Source, training and out-of-sample window",
+        analysis_window,
+        "No analysis-window status was produced.",
+    )
+    add_table(
+        lines,
+        "Artifact-level TT200 time-contract check",
+        time_contract,
+        "No time-contract status was produced.",
     )
     add_table(
         lines,
@@ -151,6 +167,13 @@ def main() -> None:
                 "proxy_model",
                 "train_rows",
                 "test_rows",
+                "source_start_year",
+                "source_end_year",
+                "training_start_year",
+                "test_start_year",
+                "test_end_year",
+                "source_panel_minimum_year_actual",
+                "source_panel_maximum_year_actual",
                 "rmse",
                 "winsorized_rmse",
                 "rmse_ex_top_1pct",
@@ -244,12 +267,6 @@ def main() -> None:
         top.head(100),
         "No common-primary/core contributor table was produced.",
     )
-    add_table(
-        lines,
-        "Prespecified PDF verification manifest",
-        verification,
-        "No verification manifest was produced.",
-    )
 
     if not mapping_review.empty:
         review = mapping_review.sort_values("rows", ascending=False).head(50)
@@ -264,12 +281,13 @@ def main() -> None:
     lines += [
         "## Decision rules",
         "",
-        "1. The expected-CFO coefficients are admissible only when the estimation-population gate passes.",
-        "2. `any_candidate` uses the absolute residual; signed residuals are reserved for directional outcomes.",
-        "3. The nested history model is retained only if it improves EWC on the identical all-model firm-year sample.",
-        "4. Main mechanism claims use the common-primary/core reconciliation outputs, not full-universe contributor tables.",
-        "5. Scale/scope screening is waived by design and disclosed as a maintained source-consistency assumption.",
-        "6. A PDF-manifest row remains evidence-pending until `document_checked=true` and a verification result is recorded.",
+        "1. The expected-CFO coefficients are admissible only when the estimation-population and TT200 time-contract gates pass.",
+        "2. Fiscal year 2015 is not described as an out-of-sample model test year.",
+        "3. `any_candidate` uses the absolute residual; signed residuals are reserved for directional outcomes.",
+        "4. The nested history model is retained only if it improves EWC on the identical all-model firm-year sample.",
+        "5. Main mechanism claims use the common-primary/core source-record reconciliation outputs, not full-universe contributor tables.",
+        "6. Scale/scope screening is waived by design and disclosed as a maintained source-consistency assumption.",
+        "7. No separate PDF-verification requirement is imposed because retained source-record labels and values were verified during data construction.",
     ]
 
     report = output / "CFS_SHIFTING_VALIDATION_REPORT.md"

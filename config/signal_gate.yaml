@@ -7,6 +7,13 @@ paths:
   baseline_output: artifacts/ols_baselines.csv.gz
   profile_output: artifacts/input_profile.json
 
+analysis_window:
+  source_start_year: 2015
+  source_end_year: 2025
+  training_start_year: 2015
+  test_start_year: 2016
+  test_end_year: 2025
+
 input:
   chunksize: 250000
   audited_label: audited
@@ -52,6 +59,7 @@ panel:
   winsor_upper: 0.99
 
 models:
+  training_start_year: 2015
   minimum_train_rows: 500
   minimum_validation_rows: 100
   minimum_firm_history: 1
@@ -88,7 +96,7 @@ signal:
   error_sd_ratio_grid: [1.0]
   delta_grid: [0.0, 0.0025, 0.005, 0.01]
   decisive_probability: 0.80
-  minimum_test_year: 2018
+  minimum_test_year: 2016
   maximum_test_year: 2025
 
 report:
