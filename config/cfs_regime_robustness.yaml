@@ -1,0 +1,40 @@
+cfs_regime_robustness:
+  enabled: true
+  case_table: cfs_shifting_proxy_common_primary_core_cases
+  proxy_model: earnings_working_capital
+  sample_mode: common_primary_models
+  sample_restriction: analysis_core
+
+  outcomes:
+    - any_candidate
+    - audited_cfo_decrease
+    - audited_cfo_increase
+    - cff_down_candidate
+    - cfi_up_candidate
+
+  exchange_groups: [HOSE, HNX, UPCOM]
+  exchange_reference: HOSE
+  minimum_group_rows: 100
+  minimum_group_positives: 10
+
+  bootstrap_repetitions: 500
+  bootstrap_seed: 240720
+
+  minimum_interaction_rows: 300
+  minimum_interaction_positives: 20
+  interaction_ridge: 1.0e-6
+  interaction_max_iter: 100
+  interaction_tolerance: 1.0e-8
+  continuous_controls: [log_lag_assets, pre_cfo_scaled]
+  exchange_fixed_effects: [fiscal_year, industry_name]
+  covid_fixed_effects: [fiscal_year, raw_exchange, industry_name]
+
+  covid:
+    # This is a temporal-regime robustness test, not a causal treatment design.
+    pre_years: [2016, 2017, 2018, 2019]
+    primary_shock_years: [2020, 2021]
+    recovery_years: [2022, 2023, 2024, 2025]
+    alternative_shock_windows:
+      COVID_2020_ONLY: [2020]
+      COVID_2020_2021: [2020, 2021]
+      COVID_2020_2022: [2020, 2021, 2022]
