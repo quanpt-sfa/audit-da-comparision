@@ -23,7 +23,15 @@ def rolling_expected_cfo_proxies(
     runtime["maximum_test_year"] = window.test_end_year
 
     predictions, folds = _legacy_rolling(source, runtime)
-    metadata = window.as_dict()
+    source_year = pd.to_numeric(source["fiscal_year"], errors="coerce").dropna()
+    metadata = window.as_dict() | {
+        "source_panel_minimum_year_actual": int(source_year.min())
+        if not source_year.empty
+        else pd.NA,
+        "source_panel_maximum_year_actual": int(source_year.max())
+        if not source_year.empty
+        else pd.NA,
+    }
     for frame in (predictions, folds):
         if frame.empty:
             continue
@@ -42,4 +50,8 @@ def rolling_expected_cfo_proxies(
             raise AssertionError(
                 "Expected-CFO folds contain years outside the test contract"
             )
+    if not source_year.empty and int(source_year.min()) < window.training_start_year:
+        raise AssertionError(
+            "Expected-CFO source panel includes pre-contract training years"
+        )
     return predictions, folds
