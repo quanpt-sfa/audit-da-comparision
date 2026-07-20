@@ -7,6 +7,7 @@ import pandas as pd
 import yaml
 
 from _next_diag_common import load_config, resolve
+from audit_da.analysis_window import window_from_section
 from audit_da.auditor_regime import run_auditor_regime_analysis
 from audit_da.auditor_source import discover_auditor_sources
 from audit_da.auditor_source_safe import load_auditor_firm_year_safe
@@ -77,11 +78,9 @@ def load_project_auditor_source(
     audited_label: str,
     required_scope: str | None,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    """Prefer the verified BCTC audit metadata contract over schema guessing."""
     exact_sources = [path for path in paths if is_bctc_audit_annual_long(path)]
     if exact_sources:
-        selected = exact_sources[0]
-        return load_bctc_audit_annual_long(selected, settings)
+        return load_bctc_audit_annual_long(exact_sources[0], settings)
     return load_auditor_firm_year_safe(
         paths,
         settings,
@@ -95,15 +94,13 @@ def apply_analysis_year_window(
     firm_year: pd.DataFrame,
     settings: dict,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    minimum_year = int(settings.get("analysis_minimum_year", 2015))
-    maximum_year = int(settings.get("analysis_maximum_year", 2025))
-    if minimum_year > maximum_year:
-        raise ValueError(
-            "analysis_minimum_year must be less than or equal to "
-            "analysis_maximum_year"
-        )
+    window = window_from_section(settings)
 
-    def restrict(frame: pd.DataFrame, label: str) -> tuple[pd.DataFrame, dict]:
+    def restrict(
+        frame: pd.DataFrame,
+        label: str,
+        mask_builder,
+    ) -> tuple[pd.DataFrame, dict]:
         if frame.empty:
             return frame.copy(), {
                 f"{label}_rows_before": 0,
@@ -114,33 +111,33 @@ def apply_analysis_year_window(
         if "fiscal_year" not in frame.columns:
             raise ValueError(f"{label} table has no fiscal_year column")
         year = pd.to_numeric(frame["fiscal_year"], errors="coerce")
-        keep = year.between(minimum_year, maximum_year, inclusive="both")
+        keep = mask_builder(year)
         restricted = frame.loc[keep].copy()
         restricted["fiscal_year"] = year.loc[keep].astype(int)
         return restricted, {
             f"{label}_rows_before": len(frame),
             f"{label}_rows_after": len(restricted),
-            f"{label}_minimum_year_after": (
-                int(restricted["fiscal_year"].min())
-                if not restricted.empty
-                else pd.NA
-            ),
-            f"{label}_maximum_year_after": (
-                int(restricted["fiscal_year"].max())
-                if not restricted.empty
-                else pd.NA
-            ),
+            f"{label}_minimum_year_after": int(restricted["fiscal_year"].min())
+            if not restricted.empty
+            else pd.NA,
+            f"{label}_maximum_year_after": int(restricted["fiscal_year"].max())
+            if not restricted.empty
+            else pd.NA,
         }
 
-    cases_window, case_status = restrict(cases, "case")
-    firm_year_window, auditor_status = restrict(firm_year, "auditor_firm_year")
+    # Auditor metadata is retained for the full TT200 source period so switching
+    # histories can use 2015 as the prespecified pre-test year. Criterion-validity
+    # cases are restricted to out-of-sample test years only.
+    cases_window, case_status = restrict(cases, "case", window.test_mask)
+    firm_year_window, auditor_status = restrict(
+        firm_year, "auditor_firm_year", window.source_mask
+    )
     status = pd.DataFrame(
         [
             {
                 "status": "PASS",
-                "analysis_minimum_year": minimum_year,
-                "analysis_maximum_year": maximum_year,
-                "window_basis": "TT200_REPORTING_REGIME",
+                **window.as_dict(),
+                "window_basis": "TT200_SOURCE_WITH_OUT_OF_SAMPLE_TEST",
                 **case_status,
                 **auditor_status,
             }
@@ -153,16 +150,12 @@ def update_completion_gate(output: Path, auditor_status: pd.DataFrame) -> pd.Dat
     current = read_table(output, "cfs_completion_gate_status", required=False)
     row = {
         "gate": "auditor_regime_heterogeneity",
-        "status": (
-            auditor_status.loc[0, "status"]
-            if not auditor_status.empty and "status" in auditor_status
-            else "NOT_EVALUATED"
-        ),
-        "evidence_rows": (
-            int(auditor_status.loc[0, "known_auditor_rows"])
-            if not auditor_status.empty and "known_auditor_rows" in auditor_status
-            else 0
-        ),
+        "status": auditor_status.loc[0, "status"]
+        if not auditor_status.empty and "status" in auditor_status
+        else "NOT_EVALUATED",
+        "evidence_rows": int(auditor_status.loc[0, "known_auditor_rows"])
+        if not auditor_status.empty and "known_auditor_rows" in auditor_status
+        else 0,
     }
     if current.empty:
         return pd.DataFrame([row])
@@ -183,13 +176,7 @@ def unavailable_status(cases: pd.DataFrame, source_status: pd.DataFrame) -> pd.D
     if not source_status.empty:
         fields = [
             column
-            for column in (
-                "path",
-                "status",
-                "reason",
-                "initial_error",
-                "retry_error",
-            )
+            for column in ("path", "status", "reason", "initial_error", "retry_error")
             if column in source_status
         ]
         if fields:
@@ -227,6 +214,11 @@ def main() -> None:
         if auxiliary_config.exists():
             loaded = yaml.safe_load(auxiliary_config.read_text(encoding="utf-8")) or {}
             settings = dict(loaded.get("auditor_regime", loaded))
+    # The runtime CFS contract is authoritative when this script is called by
+    # run_cfs_shifting_validation.py.
+    settings["analysis_window"] = dict(
+        cfs_settings.get("analysis_window", settings.get("analysis_window", {}))
+    )
     if not settings.get("enabled", True):
         print("Auditor-regime analysis disabled by configuration")
         return
@@ -247,14 +239,11 @@ def main() -> None:
     cases, firm_year, window_status = apply_analysis_year_window(
         cases, firm_year, settings
     )
+    window = window_from_section(settings)
     if not source_status.empty:
         source_status = source_status.copy()
-        source_status["analysis_minimum_year"] = int(
-            settings.get("analysis_minimum_year", 2015)
-        )
-        source_status["analysis_maximum_year"] = int(
-            settings.get("analysis_maximum_year", 2025)
-        )
+        for name, value in window.as_dict().items():
+            source_status[name] = value
 
     if firm_year.empty:
         remove_stale_outputs(output)
