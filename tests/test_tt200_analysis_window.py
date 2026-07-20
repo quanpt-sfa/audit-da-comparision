@@ -7,6 +7,8 @@ import sys
 import pandas as pd
 import yaml
 
+from audit_da.analysis_window import AnalysisWindow
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS_DIR = REPO_ROOT / "scripts"
@@ -22,7 +24,7 @@ def _load_script_module(name: str, filename: str):
     return module
 
 
-def test_runtime_config_locks_tt200_window(tmp_path: Path) -> None:
+def test_runtime_config_locks_source_training_and_test_windows(tmp_path: Path) -> None:
     runner = _load_script_module(
         "run_cfs_shifting_validation_test",
         "run_cfs_shifting_validation.py",
@@ -51,24 +53,33 @@ def test_runtime_config_locks_tt200_window(tmp_path: Path) -> None:
         original,
         2015,
         2025,
+        2016,
     )
 
     settings = runtime["cfs_shifting_validation"]
+    assert settings["analysis_window"] == {
+        "source_start_year": 2015,
+        "source_end_year": 2025,
+        "training_start_year": 2015,
+        "test_start_year": 2016,
+        "test_end_year": 2025,
+    }
     assert settings["minimum_year"] == 2015
     assert settings["maximum_year"] == 2025
-    assert settings["minimum_test_year"] == 2015
+    assert settings["training_start_year"] == 2015
+    assert settings["minimum_test_year"] == 2016
     assert settings["maximum_test_year"] == 2025
     loaded = yaml.safe_load(runtime_path.read_text(encoding="utf-8"))
     assert loaded["cfs_shifting_validation"] == settings
     runtime_path.unlink()
 
 
-def test_auditor_window_excludes_pre_2015_and_post_2025() -> None:
+def test_auditor_uses_source_year_for_history_and_test_year_for_cases() -> None:
     auditor_script = _load_script_module(
         "analyze_auditor_regime_test",
         "22_analyze_auditor_regime.py",
     )
-    years = [2014, 2015, 2020, 2025, 2026]
+    years = [2014, 2015, 2016, 2020, 2025, 2026]
     cases = pd.DataFrame(
         {
             "issuer_ticker": [f"C{i}" for i in range(len(years))],
@@ -82,43 +93,57 @@ def test_auditor_window_excludes_pre_2015_and_post_2025() -> None:
             "auditor_group": ["NON_BIG4"] * len(years),
         }
     )
+    settings = {
+        "analysis_window": {
+            "source_start_year": 2015,
+            "source_end_year": 2025,
+            "training_start_year": 2015,
+            "test_start_year": 2016,
+            "test_end_year": 2025,
+        }
+    }
 
     cases_window, auditor_window, status = (
-        auditor_script.apply_analysis_year_window(
-            cases,
-            firm_year,
-            {
-                "analysis_minimum_year": 2015,
-                "analysis_maximum_year": 2025,
-            },
-        )
+        auditor_script.apply_analysis_year_window(cases, firm_year, settings)
     )
 
-    assert cases_window["fiscal_year"].tolist() == [2015, 2020, 2025]
-    assert auditor_window["fiscal_year"].tolist() == [2015, 2020, 2025]
-    assert status.loc[0, "case_rows_before"] == 5
-    assert status.loc[0, "case_rows_after"] == 3
-    assert status.loc[0, "case_minimum_year_after"] == 2015
-    assert status.loc[0, "case_maximum_year_after"] == 2025
+    assert cases_window["fiscal_year"].tolist() == [2016, 2020, 2025]
+    assert auditor_window["fiscal_year"].tolist() == [2015, 2016, 2020, 2025]
+    assert status.loc[0, "source_start_year"] == 2015
+    assert status.loc[0, "test_start_year"] == 2016
+    assert status.loc[0, "case_minimum_year_after"] == 2016
+    assert status.loc[0, "auditor_firm_year_minimum_year_after"] == 2015
 
 
-def test_invalid_year_window_is_rejected() -> None:
-    auditor_script = _load_script_module(
-        "analyze_auditor_regime_invalid_window_test",
-        "22_analyze_auditor_regime.py",
-    )
-    empty = pd.DataFrame(columns=["issuer_ticker", "fiscal_year"])
-
+def test_invalid_contract_is_rejected() -> None:
     try:
-        auditor_script.apply_analysis_year_window(
-            empty,
-            empty,
+        AnalysisWindow.from_mapping(
             {
-                "analysis_minimum_year": 2026,
-                "analysis_maximum_year": 2025,
-            },
+                "source_start_year": 2015,
+                "source_end_year": 2025,
+                "training_start_year": 2014,
+                "test_start_year": 2016,
+                "test_end_year": 2025,
+            }
         )
     except ValueError as exc:
-        assert "analysis_minimum_year" in str(exc)
+        assert "training_start_year" in str(exc)
     else:  # pragma: no cover
-        raise AssertionError("Invalid year window should raise ValueError")
+        raise AssertionError("Training before the source regime must be rejected")
+
+
+def test_test_year_must_follow_training_start() -> None:
+    try:
+        AnalysisWindow.from_mapping(
+            {
+                "source_start_year": 2015,
+                "source_end_year": 2025,
+                "training_start_year": 2015,
+                "test_start_year": 2015,
+                "test_end_year": 2025,
+            }
+        )
+    except ValueError as exc:
+        assert "test_start_year" in str(exc)
+    else:  # pragma: no cover
+        raise AssertionError("Test must start after the first training year")
