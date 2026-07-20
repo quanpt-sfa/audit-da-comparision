@@ -4,23 +4,28 @@
 
 This extension tests whether the criterion validity of abnormal-CFO scores differs between Big4 and non-Big4 audit regimes. Auditor identity is joined only after expected-CFO scores are constructed and is never used as an expected-CFO predictor.
 
-## Auditor source discovery
+## Verified auditor source
 
-The accounting panel and financial-statement long file do not need to contain auditor identity. The loader searches, in order:
+The project source is fixed at:
 
-1. configured `auditor_input` or `audit_input` paths;
-2. `panel_input` and `raw_input` when they contain auditor metadata;
-3. explicit historical paths such as `data/bctc_audit_annual_long.csv`;
-4. conservative repository globs for `bctc_audit_annual_long.csv*` and annual audit CSV files.
+```text
+data/raw/bctc_audit_annual_long.csv
+```
 
-Two source schemas are supported:
+Its metadata contract was inspected directly on 2026-07-20. The file contains 40,265 rows and these relevant fields:
 
-- wide schema, where fields such as `audit_firm_name` or `auditor_name` are columns;
-- long schema, where `audit_indicator` identifies `audit_firm` and a value column contains the original audit-firm name.
+- issuer-year keys: `issuer_ticker`, `year`;
+- annual metadata: `period_type == annual`;
+- consolidated metadata: `statement_scope == Hợp nhất`;
+- audit metadata: `audit_status == audited`;
+- row selector: `audit_indicator == audit_firm`;
+- original audit-firm name: `audit_firm_raw`;
+- equality check/fallback: `audit_value_raw`;
+- provenance: `source_file`.
 
-The source-status output records the selected file, schema type, ticker/year fields, indicator/value fields when applicable, and coverage counts. Unknown auditor names are not coded as non-Big4.
+There are 20,129 audit-firm rows representing 20,116 issuer-years. `audit_firm_raw` and `audit_value_raw` agree on all inspected audit-firm rows. Thirteen issuer-years contain multiple auditor names and are retained as `AMBIGUOUS` rather than resolved silently.
 
-If no usable auditor source is found, the extension writes `NOT_EVALUATED`, removes stale auditor result tables, and allows the pooled CFS validation pipeline to finish. Set `fail_pipeline_if_unavailable: true` only when auditor heterogeneity is intentionally treated as a mandatory execution gate.
+The exact `BCTC_AUDIT_ANNUAL_LONG_V1` adapter is always preferred. Generic schema discovery remains only as a fallback if the verified source file is absent.
 
 ## Auditor normalization
 
@@ -31,7 +36,7 @@ Original audit-firm names are retained and normalized into:
 - `UNKNOWN`;
 - `AMBIGUOUS`.
 
-Big4 matching covers Deloitte, PwC/PricewaterhouseCoopers, EY/Ernst & Young, and KPMG. Multiple inconsistent auditor names within the same issuer-year are classified as ambiguous rather than silently selecting one.
+Big4 matching covers Deloitte, PwC/PricewaterhouseCoopers, EY/Ernst & Young, and KPMG. Missing auditor values are never coded as non-Big4.
 
 ## Analysis sample
 
@@ -40,13 +45,13 @@ The extension uses `earnings_working_capital` scores from:
 - `common_primary_models`;
 - `analysis_core`.
 
-The pooled sample remains unchanged. Auditor coverage does not filter the main validation results.
+The pooled sample remains unchanged. Auditor coverage does not filter the main validation results. A diagnostic join against the prior CFS case bundle matched approximately 94.55% of EWC firm-years to a known auditor tier, confirming that the issuer-year keys are compatible.
 
 ## Outputs
 
 The extension reports:
 
-- auditor source and schema status;
+- exact source-contract status and metadata checks;
 - name mapping and issuer-year auditor assignments;
 - Big4/non-Big4/unknown/ambiguous coverage and outcome prevalence;
 - group-specific AUC, average precision, top-decile rate and lift;
