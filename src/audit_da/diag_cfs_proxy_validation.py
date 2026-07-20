@@ -1,6 +1,6 @@
 from .cfs_item_map import classify_cfs_item, compile_item_rules, inventory_and_line_items
+from .cfs_proxy_window import rolling_expected_cfo_proxies
 from .cfs_proxy_validate import (
-    rolling_expected_cfo_proxies,
     validate_proxy_predictions as validate_proxy_predictions_legacy,
 )
 from .cfs_proxy_validate_samples import validate_proxy_predictions_dual_common
@@ -51,14 +51,7 @@ def _apply_scale_scope_waiver(tables, settings):
 
 
 def validate_proxy_predictions(predictions, observed_cases, settings):
-    """Dispatch to the validation engine implied by the configuration schema.
-
-    Production configurations define ``common_primary_models`` and/or
-    ``common_all_models`` and therefore use the strict dual-common-sample
-    engine. Older callers and focused tests that define only
-    ``common_sample_models`` retain the legacy ``common_models`` output and
-    its historical missing-metadata behavior.
-    """
+    """Dispatch to the validation engine implied by the configuration schema."""
     uses_dual_common = (
         "common_primary_models" in settings
         or "common_all_models" in settings
