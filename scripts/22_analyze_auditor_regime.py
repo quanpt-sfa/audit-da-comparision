@@ -10,6 +10,10 @@ from _next_diag_common import load_config, resolve
 from audit_da.auditor_regime import run_auditor_regime_analysis
 from audit_da.auditor_source import discover_auditor_sources
 from audit_da.auditor_source_safe import load_auditor_firm_year_safe
+from audit_da.bctc_auditor_source import (
+    is_bctc_audit_annual_long,
+    load_bctc_audit_annual_long,
+)
 from audit_da.diag_common import write_tables
 
 
@@ -59,12 +63,29 @@ def configured_source_paths(
         settings.get(
             "source_globs",
             [
-                "data/**/bctc_audit_annual_long.csv",
-                "data/**/bctc_audit_annual_long.csv.gz",
-                "data/**/*audit*annual*.csv",
-                "data/**/*audit*annual*.csv.gz",
+                "data/raw/bctc_audit_annual_long.csv",
+                "data/raw/bctc_audit_annual_long.csv.gz",
             ],
         ),
+    )
+
+
+def load_project_auditor_source(
+    paths: list[Path],
+    settings: dict,
+    audited_label: str,
+    required_scope: str | None,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Prefer the verified BCTC audit metadata contract over schema guessing."""
+    exact_sources = [path for path in paths if is_bctc_audit_annual_long(path)]
+    if exact_sources:
+        selected = exact_sources[0]
+        return load_bctc_audit_annual_long(selected, settings)
+    return load_auditor_firm_year_safe(
+        paths,
+        settings,
+        audited_label=audited_label,
+        required_scope=required_scope,
     )
 
 
@@ -157,7 +178,7 @@ def main() -> None:
         ),
     )
     paths = configured_source_paths(config_path, config, settings)
-    firm_year, name_map, source_status = load_auditor_firm_year_safe(
+    firm_year, name_map, source_status = load_project_auditor_source(
         paths,
         settings,
         audited_label=cfs_settings.get("audited_label", "audited"),
