@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import argparse
 
+import pandas as pd
+
 from _auditor_switch_common import (
     load_context,
     read_table,
@@ -9,6 +11,25 @@ from _auditor_switch_common import (
 )
 from audit_da.auditor_switch_dynamic_did import run_switch_dynamic_did
 from audit_da.diag_common import write_tables
+
+
+DID_OUTPUTS = (
+    "cfs_auditor_switch_overlap_weights",
+    "cfs_auditor_switch_overlap_balance",
+    "cfs_auditor_switch_dynamic_did_event_contrasts",
+    "cfs_auditor_switch_dynamic_did",
+    "cfs_auditor_switch_dynamic_did_pretrend",
+    "cfs_auditor_switch_dynamic_did_bootstrap",
+    "cfs_auditor_switch_dynamic_did_status",
+)
+
+
+def remove_stale_outputs(output) -> None:
+    for name in DID_OUTPUTS:
+        for suffix in (".csv", ".csv.gz"):
+            path = output / f"{name}{suffix}"
+            if path.exists():
+                path.unlink()
 
 
 def main() -> None:
@@ -27,14 +48,34 @@ def main() -> None:
         print("Auditor switch dynamic DiD disabled by configuration")
         return
 
-    stacked = read_table(output, "cfs_auditor_switch_stacked_sample")
+    stacked = read_table(
+        output, "cfs_auditor_switch_stacked_sample", required=False
+    )
     if stacked.empty:
-        raise ValueError(
-            "No stacked switch sample is available. Run "
-            "scripts/27_analyze_auditor_switch_event_study.py first."
+        remove_stale_outputs(output)
+        status = pd.DataFrame(
+            [
+                {
+                    "gate": "auditor_switch_dynamic_did",
+                    "status": "NOT_EVALUATED",
+                    "stacked_events": 0,
+                    "contrasts": 0,
+                    "estimated_cells": 0,
+                    "interpretation": (
+                        "No supported switch-event stack was available. Run "
+                        "the event-study stage and inspect its support table."
+                    ),
+                }
+            ]
         )
-    tables = run_switch_dynamic_did(stacked, auditor_settings)
-    status = tables["cfs_auditor_switch_dynamic_did_status"]
+        tables = {
+            "cfs_auditor_switch_dynamic_did_status": status,
+            "cfs_auditor_switch_dynamic_did": pd.DataFrame(),
+        }
+    else:
+        tables = run_switch_dynamic_did(stacked, auditor_settings)
+        status = tables["cfs_auditor_switch_dynamic_did_status"]
+
     tables["cfs_completion_gate_status"] = update_completion_gate(
         output, status
     )
