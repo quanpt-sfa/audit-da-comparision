@@ -88,7 +88,7 @@ signal:
   error_sd_ratio_grid: [1.0]
   delta_grid: [0.0, 0.0025, 0.005, 0.01]
   decisive_probability: 0.80
-  minimum_test_year: 2018
+  minimum_test_year: 2015
   maximum_test_year: 2025
 
 report:
