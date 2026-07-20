@@ -4,12 +4,15 @@ auditor_regime:
   fail_pipeline_if_unavailable: false
   case_table: cfs_shifting_proxy_common_primary_core_cases
 
-  # Primary evaluation window: fiscal years governed by Circular 200/2014.
-  # Earlier source years may remain available for rolling history/training only.
-  analysis_minimum_year: 2015
+  analysis_window:
+    source_start_year: 2015
+    source_end_year: 2025
+    training_start_year: 2015
+    test_start_year: 2016
+    test_end_year: 2025
+  analysis_minimum_year: 2016
   analysis_maximum_year: 2025
 
-  # Verified project source. This path is preferred over panel/raw schema guessing.
   source_preference: [auditor_input]
   explicit_source_paths:
     - data/raw/bctc_audit_annual_long.csv
@@ -18,7 +21,6 @@ auditor_regime:
     - data/raw/bctc_audit_annual_long.csv
     - data/raw/bctc_audit_annual_long.csv.gz
 
-  # Locked metadata contract verified from the source file on 2026-07-20.
   project_source_contract:
     schema: BCTC_AUDIT_ANNUAL_LONG_V1
     ticker_column: issuer_ticker
@@ -35,7 +37,6 @@ auditor_regime:
     auditor_value_check_column: audit_value_raw
     source_file_column: source_file
 
-  # Generic candidates are retained only as a fallback for a different source file.
   auditor_name_column_candidates:
     - audit_firm_raw
     - audit_firm_name
