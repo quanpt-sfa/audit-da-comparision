@@ -2,11 +2,21 @@ from __future__ import annotations
 
 import argparse
 import os
+from pathlib import Path
 import subprocess
 import sys
-from pathlib import Path
 
+import pandas as pd
 import yaml
+
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+REPO_ROOT = SCRIPT_DIR.parent
+SRC_ROOT = REPO_ROOT / "src"
+if str(SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(SRC_ROOT))
+
+from audit_da.analysis_window import AnalysisWindow
 
 
 def _resolve(repo_root: Path, value: str) -> Path:
@@ -16,6 +26,7 @@ def _resolve(repo_root: Path, value: str) -> Path:
 
 def _validate_inputs(repo_root: Path, config_path: Path) -> None:
     config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    window = AnalysisWindow.from_mapping(config.get("analysis_window"))
     panel_path = _resolve(repo_root, config["paths"]["panel_input"])
     baseline_path = _resolve(repo_root, config["paths"]["baseline_input"])
 
@@ -33,6 +44,43 @@ def _validate_inputs(repo_root: Path, config_path: Path) -> None:
             "Run scripts/03_run_baselines.py successfully before diagnostics.\n"
             f"Panel: {panel_path}\nBaseline: {baseline_path}"
         )
+
+    baseline = pd.read_csv(baseline_path, low_memory=False)
+    required_contract_columns = {
+        "source_start_year_contract",
+        "source_end_year_contract",
+        "training_start_year_contract",
+        "training_min_year",
+        "training_max_year",
+        "test_start_year_contract",
+        "test_end_year_contract",
+    }
+    missing = sorted(required_contract_columns - set(baseline.columns))
+    if missing:
+        raise RuntimeError(
+            "OLS baseline predates the shared TT200 time contract and must be "
+            f"rebuilt. Missing metadata columns: {missing}"
+        )
+    if pd.to_numeric(baseline["training_min_year"], errors="coerce").lt(
+        window.training_start_year
+    ).any():
+        raise RuntimeError("OLS baseline uses training observations before 2015")
+    test_year = pd.to_numeric(baseline["fiscal_year"], errors="coerce")
+    if not test_year.between(window.test_start_year, window.test_end_year).all():
+        raise RuntimeError("OLS baseline contains test years outside 2016-2025")
+    contract_values = {
+        "source_start_year_contract": window.source_start_year,
+        "source_end_year_contract": window.source_end_year,
+        "training_start_year_contract": window.training_start_year,
+        "test_start_year_contract": window.test_start_year,
+        "test_end_year_contract": window.test_end_year,
+    }
+    for column, expected in contract_values.items():
+        values = set(pd.to_numeric(baseline[column], errors="coerce").dropna().astype(int))
+        if values != {expected}:
+            raise RuntimeError(
+                f"OLS baseline {column}={sorted(values)} does not match {expected}"
+            )
 
 
 def main() -> None:
