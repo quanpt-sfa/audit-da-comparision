@@ -4,6 +4,11 @@ auditor_regime:
   fail_pipeline_if_unavailable: false
   case_table: cfs_shifting_proxy_common_primary_core_cases
 
+  # Primary evaluation window: fiscal years governed by Circular 200/2014.
+  # Earlier source years may remain available for rolling history/training only.
+  analysis_minimum_year: 2015
+  analysis_maximum_year: 2025
+
   # Verified project source. This path is preferred over panel/raw schema guessing.
   source_preference: [auditor_input]
   explicit_source_paths:
