@@ -6,6 +6,7 @@ from pathlib import Path
 import pandas as pd
 
 from _next_diag_common import load_config, resolve
+from audit_da.analysis_window import AnalysisWindow
 from audit_da.diag_common import write_tables
 from audit_da.diag_cfs_deep_dive import deep_dive_tables
 
@@ -23,6 +24,12 @@ def _read_artifact(output_dir: Path, name: str) -> pd.DataFrame:
     )
 
 
+def _restrict(frame: pd.DataFrame, window: AnalysisWindow) -> pd.DataFrame:
+    if frame.empty or "fiscal_year" not in frame.columns:
+        return frame.copy()
+    return frame.loc[window.source_mask(frame["fiscal_year"])].copy()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
@@ -36,23 +43,43 @@ def main() -> None:
 
     config_path, config = load_config(args.config)
     output_dir = resolve(config_path, config["paths"]["output_dir"])
-    panel = pd.read_csv(
+    window = AnalysisWindow.from_mapping(config.get("analysis_window"))
+    raw_panel = pd.read_csv(
         resolve(config_path, config["paths"]["panel_input"]),
         low_memory=False,
     )
-    identity_cases = _read_artifact(output_dir, "cfs_identity_cases")
-    alignment_cases = _read_artifact(output_dir, "component_alignment_cases")
+    panel = _restrict(raw_panel, window)
+    identity_cases = _restrict(
+        _read_artifact(output_dir, "cfs_identity_cases"), window
+    )
+    alignment_cases = _restrict(
+        _read_artifact(output_dir, "component_alignment_cases"), window
+    )
 
     metadata_value = config["paths"].get(
         "audit_metadata_input", "data/processed/audit_metadata.csv"
     )
     audit_metadata_path = resolve(config_path, metadata_value)
+    settings = dict(config["cfs_deep_dive"])
+    settings["minimum_year"] = window.source_start_year
+    settings["maximum_year"] = window.source_end_year
     tables = deep_dive_tables(
         identity_cases=identity_cases,
         alignment_cases=alignment_cases,
         panel=panel,
-        settings=config["cfs_deep_dive"],
+        settings=settings,
         audit_metadata_path=audit_metadata_path,
+    )
+    tables["cfs_deep_dive_window_status"] = pd.DataFrame(
+        [
+            {
+                "status": "PASS",
+                **window.as_dict(),
+                "identity_case_rows": len(identity_cases),
+                "alignment_case_rows": len(alignment_cases),
+                "panel_rows": len(panel),
+            }
+        ]
     )
     write_tables(tables, output_dir)
 
