@@ -8,7 +8,7 @@ import yaml
 
 from _next_diag_common import load_config, resolve
 from audit_da.analysis_window import window_from_section
-from audit_da.cfs_regime_robustness import run_regime_robustness
+from audit_da.cfs_regime_robustness_identified import run_regime_robustness
 from audit_da.diag_common import write_tables
 
 
