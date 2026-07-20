@@ -49,7 +49,9 @@ def _clip_from_training(
     for frame in frames:
         copied = frame.copy()
         for column, (lo, hi) in bounds.items():
-            copied[column] = pd.to_numeric(copied[column], errors="coerce").clip(lo, hi)
+            copied[column] = pd.to_numeric(copied[column], errors="coerce").clip(
+                lo, hi
+            )
         output.append(copied)
     return output
 
@@ -134,8 +136,18 @@ def _paired_rows(
     pre = current[current["audit_status"] == unaudited_label].copy()
     post = current[current["audit_status"] == audited_label].copy()
     common = sorted(set(pre["issuer_ticker"]) & set(post["issuer_ticker"]))
-    pre = pre[pre["issuer_ticker"].isin(common)].set_index("issuer_ticker").loc[common].reset_index()
-    post = post[post["issuer_ticker"].isin(common)].set_index("issuer_ticker").loc[common].reset_index()
+    pre = (
+        pre[pre["issuer_ticker"].isin(common)]
+        .set_index("issuer_ticker")
+        .loc[common]
+        .reset_index()
+    )
+    post = (
+        post[post["issuer_ticker"].isin(common)]
+        .set_index("issuer_ticker")
+        .loc[common]
+        .reset_index()
+    )
     return pre, post
 
 
@@ -154,7 +166,11 @@ def _correlated_error_draws(
     return scale * first, post_sd_ratio * scale * second
 
 
-def classify_draws(pre_da: np.ndarray, post_da: np.ndarray, delta: float) -> dict[str, np.ndarray]:
+def classify_draws(
+    pre_da: np.ndarray,
+    post_da: np.ndarray,
+    delta: float,
+) -> dict[str, np.ndarray]:
     pre_abs = np.abs(pre_da)
     post_abs = np.abs(post_da)
     improvement = pre_abs - post_abs
@@ -173,7 +189,10 @@ def classify_draws(pre_da: np.ndarray, post_da: np.ndarray, delta: float) -> dic
     }
 
 
-def run_signal_gate(panel: pd.DataFrame, config: dict[str, Any]) -> tuple[pd.DataFrame, pd.DataFrame]:
+def run_signal_gate(
+    panel: pd.DataFrame,
+    config: dict[str, Any],
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     model_cfg = config["models"]
     signal_cfg = config["signal"]
     panel_cfg = config["panel"]
@@ -195,8 +214,13 @@ def run_signal_gate(panel: pd.DataFrame, config: dict[str, Any]) -> tuple[pd.Dat
 
     seed = int(model_cfg["random_seed"])
     draws = int(model_cfg["posterior_draws"])
-    model_specs = {name: list(features) for name, features in model_cfg["candidate_models"].items()}
-    all_features = sorted({feature for features in model_specs.values() for feature in features})
+    model_specs = {
+        name: list(features)
+        for name, features in model_cfg["candidate_models"].items()
+    }
+    all_features = sorted(
+        {feature for features in model_specs.values() for feature in features}
+    )
     lower = float(panel_cfg["winsor_lower"])
     upper = float(panel_cfg["winsor_upper"])
     rng = np.random.default_rng(seed)
@@ -207,11 +231,46 @@ def run_signal_gate(panel: pd.DataFrame, config: dict[str, Any]) -> tuple[pd.Dat
         pre, post = _paired_rows(source, year, audited, unaudited)
         if pre.empty:
             continue
-        train_mask = source["audit_status"].eq(audited) & window.training_mask(source["fiscal_year"], year)
+        train_mask = source["audit_status"].eq(audited) & window.training_mask(
+            source["fiscal_year"], year
+        )
         train = source.loc[train_mask].copy()
         fit_train = train[train["fiscal_year"].le(year - 2)].copy()
         validation = train[train["fiscal_year"].eq(year - 1)].copy()
-        if len(train) < int(model_cfg["minimum_train_rows"]):
+        minimum_train_rows = int(model_cfg["minimum_train_rows"])
+        finite_training_rows = {
+            name: int(_finite_rows(train, features).sum())
+            for name, features in model_specs.items()
+        }
+        train_years = pd.to_numeric(train["fiscal_year"], errors="coerce").dropna()
+        base_metadata = {
+            "source_start_year_contract": window.source_start_year,
+            "source_end_year_contract": window.source_end_year,
+            "training_start_year_contract": window.training_start_year,
+            "training_min_year": int(train_years.min()) if not train_years.empty else pd.NA,
+            "training_max_year": int(train_years.max()) if not train_years.empty else pd.NA,
+            "test_start_year_contract": window.test_start_year,
+            "test_end_year_contract": window.test_end_year,
+        }
+        if (
+            len(train) < minimum_train_rows
+            or any(rows < minimum_train_rows for rows in finite_training_rows.values())
+        ):
+            for benchmark in signal_cfg["benchmarks"]:
+                fold_rows.append(
+                    {
+                        "fiscal_year": year,
+                        "benchmark": benchmark,
+                        "test_pairs": len(pre),
+                        "status": "INSUFFICIENT_FINITE_TRAINING",
+                        "stacking_weight_mode": "NOT_ESTIMATED",
+                        **base_metadata,
+                        **{
+                            f"finite_train_rows_{name}": rows
+                            for name, rows in finite_training_rows.items()
+                        },
+                    }
+                )
             continue
         train, fit_train, validation, pre, post = _clip_from_training(
             train,
@@ -232,16 +291,13 @@ def run_signal_gate(panel: pd.DataFrame, config: dict[str, Any]) -> tuple[pd.Dat
         ordered = [candidate_by_name[name] for name in weight_names]
         model_index = rng.choice(len(ordered), size=draws, p=weights)
 
-        train_years = pd.to_numeric(train["fiscal_year"], errors="coerce").dropna()
         contract_metadata = {
-            "source_start_year_contract": window.source_start_year,
-            "source_end_year_contract": window.source_end_year,
-            "training_start_year_contract": window.training_start_year,
-            "training_min_year": int(train_years.min()),
-            "training_max_year": int(train_years.max()),
-            "test_start_year_contract": window.test_start_year,
-            "test_end_year_contract": window.test_end_year,
+            **base_metadata,
             "stacking_weight_mode": stacking_mode,
+            **{
+                f"finite_train_rows_{name}": rows
+                for name, rows in finite_training_rows.items()
+            },
         }
 
         for benchmark in signal_cfg["benchmarks"]:
@@ -270,8 +326,16 @@ def run_signal_gate(panel: pd.DataFrame, config: dict[str, Any]) -> tuple[pd.Dat
                 else:
                     raise ValueError(f"Unknown benchmark: {benchmark}")
                 firms = pre_valid["firm_id"].to_numpy(str)
-                model_pre_draws.append(candidate.model.latent_draws(x_pre, firms, coef_draws, firm_draws))
-                model_post_draws.append(candidate.model.latent_draws(x_post, firms, coef_draws, firm_draws))
+                model_pre_draws.append(
+                    candidate.model.latent_draws(
+                        x_pre, firms, coef_draws, firm_draws
+                    )
+                )
+                model_post_draws.append(
+                    candidate.model.latent_draws(
+                        x_post, firms, coef_draws, firm_draws
+                    )
+                )
                 model_sigmas.append(np.sqrt(candidate.model.residual_var))
 
             rows = len(pre_valid)
@@ -279,8 +343,12 @@ def run_signal_gate(panel: pd.DataFrame, config: dict[str, Any]) -> tuple[pd.Dat
             latent_post = np.empty((rows, draws))
             selected_sigma = np.empty(draws)
             for draw_index, candidate_index in enumerate(model_index):
-                latent_pre[:, draw_index] = model_pre_draws[candidate_index][:, draw_index]
-                latent_post[:, draw_index] = model_post_draws[candidate_index][:, draw_index]
+                latent_pre[:, draw_index] = model_pre_draws[candidate_index][
+                    :, draw_index
+                ]
+                latent_post[:, draw_index] = model_post_draws[candidate_index][
+                    :, draw_index
+                ]
                 selected_sigma[draw_index] = model_sigmas[candidate_index]
 
             y_pre = pre_valid["ta_scaled"].to_numpy(float)[:, None]
@@ -300,27 +368,39 @@ def run_signal_gate(panel: pd.DataFrame, config: dict[str, Any]) -> tuple[pd.Dat
                     reduction = np.abs(da_pre) - np.abs(da_post)
                     for delta in signal_cfg["delta_grid"]:
                         states = classify_draws(da_pre, da_post, float(delta))
-                        output = pd.DataFrame({
-                            "issuer_ticker": pre_valid["issuer_ticker"],
-                            "raw_exchange": pre_valid["raw_exchange"],
-                            "fiscal_year": year,
-                            "benchmark": benchmark,
-                            "rho": float(rho),
-                            "error_sd_ratio": float(error_sd_ratio),
-                            "delta": float(delta),
-                            "ta_pre": pre_valid["ta_scaled"],
-                            "ta_post": post_valid["ta_scaled"],
-                            "raw_ta_shift": post_valid["ta_scaled"].to_numpy() - pre_valid["ta_scaled"].to_numpy(),
-                            "da_pre_mean": da_pre.mean(axis=1),
-                            "da_post_mean": da_post.mean(axis=1),
-                            "signed_shift_mean": signed_shift.mean(axis=1),
-                            "signed_shift_sd": signed_shift.std(axis=1, ddof=1),
-                            "reduction_mean": reduction.mean(axis=1),
-                            "reduction_sd": reduction.std(axis=1, ddof=1),
-                            "prob_improve": (reduction > float(delta)).mean(axis=1),
-                            "prob_deteriorate": (reduction < -float(delta)).mean(axis=1),
-                            "snr_reduction": np.abs(reduction.mean(axis=1)) / np.maximum(reduction.std(axis=1, ddof=1), 1e-12),
-                        })
+                        output = pd.DataFrame(
+                            {
+                                "issuer_ticker": pre_valid["issuer_ticker"],
+                                "raw_exchange": pre_valid["raw_exchange"],
+                                "fiscal_year": year,
+                                "benchmark": benchmark,
+                                "rho": float(rho),
+                                "error_sd_ratio": float(error_sd_ratio),
+                                "delta": float(delta),
+                                "ta_pre": pre_valid["ta_scaled"],
+                                "ta_post": post_valid["ta_scaled"],
+                                "raw_ta_shift": (
+                                    post_valid["ta_scaled"].to_numpy()
+                                    - pre_valid["ta_scaled"].to_numpy()
+                                ),
+                                "da_pre_mean": da_pre.mean(axis=1),
+                                "da_post_mean": da_post.mean(axis=1),
+                                "signed_shift_mean": signed_shift.mean(axis=1),
+                                "signed_shift_sd": signed_shift.std(axis=1, ddof=1),
+                                "reduction_mean": reduction.mean(axis=1),
+                                "reduction_sd": reduction.std(axis=1, ddof=1),
+                                "prob_improve": (
+                                    reduction > float(delta)
+                                ).mean(axis=1),
+                                "prob_deteriorate": (
+                                    reduction < -float(delta)
+                                ).mean(axis=1),
+                                "snr_reduction": np.abs(reduction.mean(axis=1))
+                                / np.maximum(
+                                    reduction.std(axis=1, ddof=1), 1e-12
+                                ),
+                            }
+                        )
                         for name, value in contract_metadata.items():
                             output[name] = value
                         for state_name, state_draws in states.items():
@@ -331,9 +411,15 @@ def run_signal_gate(panel: pd.DataFrame, config: dict[str, Any]) -> tuple[pd.Dat
                 "fiscal_year": year,
                 "benchmark": benchmark,
                 "test_pairs": rows,
+                "status": "OK",
                 **contract_metadata,
             }
-            fold_row.update({f"weight_{name}": float(weight) for name, weight in zip(weight_names, weights)})
+            fold_row.update(
+                {
+                    f"weight_{name}": float(weight)
+                    for name, weight in zip(weight_names, weights)
+                }
+            )
             fold_rows.append(fold_row)
 
     if not results:
@@ -342,6 +428,8 @@ def run_signal_gate(panel: pd.DataFrame, config: dict[str, Any]) -> tuple[pd.Dat
     folds = pd.DataFrame(fold_rows)
     if posterior["training_min_year"].lt(window.training_start_year).any():
         raise AssertionError("Bayesian signal training includes a pre-TT200 year")
-    if not posterior["fiscal_year"].between(window.test_start_year, window.test_end_year).all():
+    if not posterior["fiscal_year"].between(
+        window.test_start_year, window.test_end_year
+    ).all():
         raise AssertionError("Bayesian signal output contains years outside the contract")
     return posterior, folds
