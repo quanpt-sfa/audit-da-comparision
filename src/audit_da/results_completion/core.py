@@ -91,7 +91,10 @@ def _adjust_pvalues(pvalues: Sequence[float], method: str) -> np.ndarray:
     return adjusted
 
 def output_hash(frame: pd.DataFrame) -> str:
-    ordered = frame.sort_values([c for c in KEYS if c in frame], kind='mergesort').reset_index(drop=True)
+    sort_cols = [c for c in KEYS if c in frame]
+    if not sort_cols:
+        sort_cols = sorted(frame.columns.tolist())
+    ordered = frame.sort_values(sort_cols, kind='mergesort', na_position='last').reset_index(drop=True) if sort_cols else frame.reset_index(drop=True)
     payload = ordered.to_csv(index=False, float_format='%.17g').encode('utf-8')
     return hashlib.sha256(payload).hexdigest()
 
@@ -162,6 +165,6 @@ def _cluster_ols(y: np.ndarray, x: np.ndarray, clusters: np.ndarray) -> tuple[np
     correction = g / (g - 1) * ((n - 1) / max(n - k, 1))
     cov = correction * xtx_inv @ meat @ xtx_inv
     se = np.sqrt(np.maximum(np.diag(cov), 0.0))
-    t = beta / se
+    t = np.divide(beta, se, out=np.full_like(beta, np.nan), where=se > 0)
     p = 2 * stats.t.sf(np.abs(t), df=max(g - 1, 1))
     return (beta, se, p)

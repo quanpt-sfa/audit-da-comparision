@@ -66,3 +66,11 @@ def test_sample_manifest_and_supplemental_inference() -> None:
     concentration = pd.DataFrame({"issuer_ticker": ["A", "A", "B", "C"], "excess_nhhi": [-.1, .2, -.3, .1]})
     result = supplemental_inference(concentration, None, settings)
     assert result.loc[0, "diagnostic"] == "excess_nhhi"
+
+
+def test_write_outputs_hashes_summary_tables(tmp_path) -> None:
+    from audit_da.results_completion import write_outputs
+    write_outputs({"summary": pd.DataFrame({"metric": ["b", "a"], "value": [2.0, 1.0]})}, tmp_path, {"seed": 1})
+    assert (tmp_path / "summary.csv").exists()
+    manifest = (tmp_path / "results_completion_manifest.json").read_text()
+    assert "sha256" in manifest
