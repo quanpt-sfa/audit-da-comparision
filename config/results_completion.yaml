@@ -1,0 +1,29 @@
+paths:
+  panel_input: data/processed/accrual_panel.csv.gz
+  output_dir: artifacts/manuscript_results
+
+columns:
+  industry: icb_industry
+
+settings:
+  audited_label: audited
+  unaudited_label: unaudited
+  training_start_year: 2015
+  test_start_year: 2016
+  test_end_year: 2025
+  min_train_rows: 100
+  min_industry_rows: 40
+  trailing_years: 5
+  winsor_lower: 0.01
+  winsor_upper: 0.99
+  bootstrap_draws: 2000
+  simulation_draws: 2000
+  seed: 20260723
+  profit_thresholds: [0.025, 0.05, 0.075, 0.10]
+  direct_thresholds: [0.0025, 0.005, 0.01, 0.02]
+  tail_quantile: 0.90
+  negligible_sd: 1.0e-12
+
+optional_paths:
+  concentration_input: artifacts/cfs_shifting_validation/concentration_cases.csv
+  near_zero_input: artifacts/cfs_shifting_validation/near_zero_randomisation.csv

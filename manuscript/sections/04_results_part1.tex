@@ -1,0 +1,105 @@
+Figure~\ref{fig:rq1_deciles} qualifies the positive full-sample mean. Mean $D$ is negative in deciles 1--6 and rises to 0.10934 in decile 10, while CFO remains the larger component in 65.1--72.9 percent of observations across deciles. Excluding decile 10 leaves a median component difference of 0.002288 (95-percent CI: 0.001884--0.002840) and a CFO-larger share of 68.9 percent. Both Jones-family median contrasts meet their unadjusted directional criteria, the CFO-larger share supplies supporting descriptive evidence, and the top-decile exclusion satisfies the prespecified tail-sensitivity condition. The RQ1 composite probability and its Holm-adjusted result remain pending rerun. The distribution nevertheless rejects a uniform decline in absolute residuals. Appendix Table~\ref{tab:rq1_deciles} reports the decile values and weighted-mean check.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.88\textwidth]{figures/figure1_decile_residual_change.pdf}
+\caption{Absolute-residual change and CFO contribution across pre-audit-abnormality deciles}
+\label{fig:rq1_deciles}
+\begin{minipage}{0.92\textwidth}\footnotesize
+\textit{Notes:} Bars report mean $D=|DA^{pre}|-|DA^{post}|$ and the connected points report the mean CFO Shapley component under the post-audit-reference modified-Jones specification. Deciles are formed from constructed pre-audit absolute discretionary accruals. All quantities are scaled by beginning audited assets.
+\end{minipage}
+\end{figure}
+The current within-firm time-shift output uses 7,754 observations from 980 issuers with repeated model-sample years. As a secondary additivity diagnostic, realised-minus-shift means equal 0.02492--0.02506 for CFO and 0.00026--0.00027 for profit (Table~\ref{tab:component_time_shift}). The revised primary statistic is the realised median component difference minus the simulated median; its interval and Monte Carlo probability are pending rerun in Table~\ref{tab:protocol_extension_outputs}. The independently sampled within-issuer donor and same-year/industry cross-issuer donor sensitivities are also pending. The existing mean evidence shows that contemporaneous CFO pairing differs from revisions drawn from other years of the same issuer, but it does not rank reporting quality or identify an audit correction.
+
+\begin{table}[htbp]
+\centering
+\caption{Within-firm time-shift diagnostic for RQ1}
+\label{tab:component_time_shift}
+\small
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{llrrrrr}
+\toprule
+Model & Component & $N$ & Realised mean & Time-shift mean [95\% interval] & Realised minus time shift & One-sided $p$ \\
+\midrule
+Jones & PAT & 7,754 & $-0.00164$ & $-0.00190$ [$-0.00213,-0.00167$] & 0.00027 & 0.011 \\
+Jones & CFO & 7,754 & 0.01042 & $-0.01464$ [$-0.01582,-0.01349$] & 0.02506 & $<0.001$ \\
+Modified Jones & PAT & 7,754 & $-0.00164$ & $-0.00190$ [$-0.00212,-0.00166$] & 0.00026 & 0.020 \\
+Modified Jones & CFO & 7,754 & 0.01037 & $-0.01455$ [$-0.01571,-0.01334$] & 0.02492 & $<0.001$ \\
+\bottomrule
+\end{tabular}%
+}
+\begin{minipage}{0.97\textwidth}\footnotesize
+\textit{Notes:} The table reports the legacy mean-based statistic as a secondary additivity diagnostic. The revised primary analysis uses the median component difference, limits lags to the issuer's eligible non-zero cyclic set, and reports a Monte Carlo probability. Each draw preserves scaled issuer-specific revision magnitudes and signs while breaking contemporaneous issuer--year pairing. The benchmark is not a test of reporting-quality improvement.
+\end{minipage}
+\end{table}
+\subsection{RQ1: attribution is tail-robust but architecture-dependent}\label{subsec:results_family}
+
+On 5,832 common observations, mean $D$ is positive under the cash-flow anchor (0.00237--0.00243) but negative under the balance-sheet anchor ($-0.00618$ to $-0.00612$), despite about 80-percent directional agreement at the observation level. Across model families, any discordance falls from 21.4 to 10.5 percent as the tolerance rises from zero to one percent; hard opposite classifications fall from 16.9 to 6.4 percent (Appendix Table~\ref{tab:family_discordance}). Because residual scales differ, these raw magnitudes are descriptive within architecture rather than directly comparable across model families. The revised industry-fixed-effect, industry-specific-slope, trailing-five-year, and historical-scale-normalised comparisons are pending rerun. The adapted Dechow--Dichev contrast is close to zero for the version-consistent states, while mapped-reversal contrasts are positive. Firm-level calibration is also unstable: 25.3 percent of firms remain in the same residual-volatility quartile, 22.7 percent move by one quartile, and 19.4 percent move between the bottom and top quartiles. Detailed results appear in Appendix~\ref{app:dd_details}. These checks reinforce an architecture boundary rather than provide CFO-independent validation.
+
+\subsection{RQ2: classification switching and explanation coverage}\label{subsec:results_switching}
+
+The primary gate is inactive for 6,360 of 8,461 pairs. Table~\ref{tab:inference_switching} shows CFO-sign, common-boundary CFO-category, and high-$|TA|$ switch rates of 8.1, 21.7, and 5.1 percent. Their outside-gate shares are 61.7, 67.6, and 60.1 percent. The existing independence-based Wilson lower bounds are 58.0, 65.4, and 55.5 percent and are retained only as descriptive sensitivity. The revised primary issuer-cluster bootstrap intervals for the switch rates and outside-gate shares are pending rerun in Table~\ref{tab:protocol_extension_outputs}. CFO alone receives 381 of the 434 high-$|TA|$ switches, profit alone receives 31, and 22 are shared. Outside-gate changes are economically non-trivial: the median CFO difference among sign switches is 8.1 percent of assets, and the ninetieth-percentile quintile displacement is 51.4 percentile points.
+
+\begin{table}[htbp]
+\centering
+\caption{RQ2 reporting-state switching and primary profit-gate coverage}
+\label{tab:inference_switching}
+\small
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lrrrrrr}
+\toprule
+Outcome & $N$ & Switches & Switch rate & Outside-gate rate & Share outside gate & Material outside-gate switches \\
+\midrule
+CFO sign & 8,461 & 682 & 8.1\% & 6.6\% & 61.7\% & 397 \\
+Common-boundary CFO category & 8,461 & 1,834 & 21.7\% & 19.5\% & 67.6\% & 519 \\
+High $|TA|$ classification & 8,461 & 434 & 5.1\% & 4.1\% & 60.1\% & 261 \\
+\bottomrule
+\end{tabular}%
+}
+\begin{minipage}{0.97\textwidth}\footnotesize
+\textit{Notes:} A common-boundary CFO-category switch records movement across post-audit-state fiscal-year quintile boundaries applied to both states. The locked count is provisional until the common post-audit CDF rerun is completed. The outside-gate rate is calculated among 6,360 observations for which the primary gate is not activated; the share outside gate is the proportion of all switches occurring outside the gate. Point estimates are unchanged by the revised inference rule; issuer-cluster bootstrap intervals are pending rerun.
+\end{minipage}
+\end{table}
+Model-based results are similar (Table~\ref{tab:da_switching}). DA-sign switching is 9.1--10.0 percent, high-$|DA|$ switching is 4.5--4.8 percent, and 62.4--64.9 percent of DA-sign switches occur outside the gate. The pooled high-$|DA|$ sets overlap by only 0.634--0.654 on the Jaccard scale, indicating material turnover in tail membership even when aggregate switch rates appear modest. Common-post-audit-CDF percentile displacement, year-specific Jaccard indices, and their dispersion are pending rerun as prescribed sensitivity outputs.
+
+\begin{table}[htbp]
+\centering
+\caption{RQ2 discretionary-accrual switching across model families}
+\label{tab:da_switching}
+\small
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lrrrrr}
+\toprule
+Model & $N$ & DA sign switch & Sign switches outside gate & High-$|DA|$ switch & Jaccard overlap \\
+\midrule
+Jones & 7,789 & 9.9\% & 63.8\% & 4.8\% & 0.634 \\
+Kothari-style ROA-adjusted & 7,789 & 9.1\% & 64.4\% & 4.5\% & 0.654 \\
+Modified Jones & 7,789 & 10.0\% & 64.9\% & 4.8\% & 0.638 \\
+Nonlinear modified Jones & 7,789 & 9.4\% & 62.4\% & 4.6\% & 0.649 \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+\subsection{RQ2: DA switching exceeds both neutral benchmarks}\label{subsec:results_benchmarks}
+
+Table~\ref{tab:switch_benchmarks} compares observed sign switching with the prespecified benchmarks. CFO sign exceeds the symmetric-sign interval of 6.3--7.0 percent but lies within the signed-shift reassignment interval of 7.4--8.3 percent. All four DA-sign rates exceed both model-specific intervals, with one-sided probabilities no greater than 0.007 under signed-shift reassignment. Each sign-switch component meets its unadjusted symmetric-sign criterion. The RQ2 excess-switching composite probability and its Holm-adjusted result remain pending rerun. The coverage point estimates and Wilson sensitivity exceed one half, but the RQ2 coverage composite remains pending until issuer-cluster bootstrap lower bounds and adjusted family probabilities are reported. After excluding near-zero profit, outside-gate shares are 62.9, 68.9, and 62.4 percent; across four denominator definitions, every primary share remains above one half.
+
+\begin{table}[htbp]
+\centering
+\caption{State-independent sign-switch benchmarks for RQ2}
+\label{tab:switch_benchmarks}
+\small
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{llrrr}
+\toprule
+Outcome & Model & Observed switch & Symmetric-sign benchmark & Signed-shift reassignment \\
+\midrule
+CFO sign & --- & 8.1\% & 6.7\% [6.3, 7.0] & 7.9\% [7.4, 8.3] \\
+DA sign & Jones & 9.9\% & 7.9\% [7.5, 8.3] & 9.2\% [8.7, 9.8] \\
+DA sign & Kothari-style ROA-adjusted & 9.1\% & 7.0\% [6.6, 7.5] & 8.0\% [7.5, 8.6] \\
+DA sign & Modified Jones & 10.0\% & 7.9\% [7.4, 8.3] & 9.2\% [8.7, 9.8] \\
+DA sign & Nonlinear modified Jones & 9.4\% & 7.3\% [6.9, 7.8] & 8.3\% [7.8, 8.8] \\
+\bottomrule
+\end{tabular}%
+}
+\begin{minipage}{0.97\textwidth}\footnotesize
