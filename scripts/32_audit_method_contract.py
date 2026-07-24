@@ -32,6 +32,18 @@ def _resolve(config_path: Path, value: str) -> Path:
     return path if path.is_absolute() else (config_path.parent.parent / path).resolve()
 
 
+def _strict_bool(series: pd.Series, column: str) -> pd.Series:
+    if pd.api.types.is_bool_dtype(series):
+        return series.astype(bool)
+    mapped = series.astype("string").str.strip().str.lower().map(
+        {"true": True, "false": False, "1": True, "0": False}
+    )
+    if mapped.isna().any():
+        bad = sorted(series.loc[mapped.isna()].astype(str).unique())[:10]
+        raise ValueError(f"Cannot parse boolean checkpoint column {column}: {bad}")
+    return mapped.astype(bool)
+
+
 def _runtime_checks() -> dict[str, object]:
     training = pd.DataFrame(
         {
@@ -46,7 +58,7 @@ def _runtime_checks() -> dict[str, object]:
     intercept_pass = (
         model.fit_intercept is False
         and scaler.with_mean is False
-        and float(np.asarray(model.intercept_)) == 0.0
+        and float(model.intercept_) == 0.0
     )
 
     da_pre = np.array([0.20, -0.10, 0.05])
@@ -69,7 +81,10 @@ def _runtime_checks() -> dict[str, object]:
         values, cells, 100, np.random.default_rng(7)
     )
     cell_pass = all(
-        np.all(np.sort(permutations[:, indices], axis=1) == np.sort(values[indices]))
+        np.all(
+            np.sort(permutations[:, indices], axis=1)
+            == np.sort(values[indices])
+        )
         for indices in (np.array([0, 1]), np.array([2, 3]))
     )
 
@@ -80,15 +95,13 @@ def _runtime_checks() -> dict[str, object]:
         "three_player_shapley_max_error": shapley_error,
         "within_fiscal_year_reassignment": bool(cell_pass),
     }
-    if not all(
-        checks[key]
-        for key in (
-            "no_ordinary_intercept",
-            "no_feature_centering",
-            "three_player_shapley_efficiency",
-            "within_fiscal_year_reassignment",
-        )
-    ):
+    required = (
+        "no_ordinary_intercept",
+        "no_feature_centering",
+        "three_player_shapley_efficiency",
+        "within_fiscal_year_reassignment",
+    )
+    if not all(checks[key] for key in required):
         raise AssertionError(f"Runtime method-contract check failed: {checks}")
     return checks
 
@@ -99,21 +112,33 @@ def _audit_existing_outputs(output_dir: Path) -> dict[str, object]:
     estimation_path = output_dir / "accrual_estimation_manifest.csv"
     if estimation_path.exists():
         estimation = pd.read_csv(estimation_path)
-        required = {"ordinary_intercept", "feature_centering", "scale_regressor"}
+        required = {
+            "status",
+            "ordinary_intercept",
+            "feature_centering",
+            "scale_regressor",
+        }
         missing = sorted(required - set(estimation.columns))
         if missing:
             raise ValueError(
                 "Existing architecture checkpoint predates the locked method contract; "
                 f"missing columns: {missing}"
             )
-        estimated = estimation.loc[estimation.get("status").eq("estimated")]
-        if estimated["ordinary_intercept"].astype(bool).any():
+        estimated = estimation.loc[estimation["status"].eq("estimated")].copy()
+        if estimated.empty:
+            raise ValueError("Architecture checkpoint has no estimated specifications")
+        if _strict_bool(
+            estimated["ordinary_intercept"], "ordinary_intercept"
+        ).any():
             raise ValueError("Existing checkpoint used an ordinary intercept")
-        if estimated["feature_centering"].astype(bool).any():
+        if _strict_bool(
+            estimated["feature_centering"], "feature_centering"
+        ).any():
             raise ValueError("Existing checkpoint centred Jones predictors")
         if not estimated["scale_regressor"].eq("inv_assets").all():
             raise ValueError("Existing checkpoint has an invalid scale regressor")
         audit["architecture_checkpoint"] = "PASS"
+        audit["estimated_architecture_rows"] = int(len(estimated))
     else:
         audit["architecture_checkpoint"] = "NOT_PRESENT"
 
@@ -134,34 +159,46 @@ def _audit_existing_outputs(output_dir: Path) -> dict[str, object]:
                 "Existing attribution checkpoint predates the locked estimand; "
                 f"missing columns: {missing}"
             )
+        if attribution.empty:
+            raise ValueError("Attribution checkpoint is empty")
         error = (
             attribution[["phi_pat", "phi_cfo", "phi_benchmark"]].sum(axis=1)
             - attribution["reduction"]
         ).abs()
-        if len(error) and float(error.max()) > 1.0e-10:
+        if float(error.max()) > 1.0e-10:
             raise ValueError("Existing Shapley checkpoint violates efficiency")
         if not attribution["attribution_player_count"].eq(3).all():
             raise ValueError("Existing attribution checkpoint is not three-player")
+        if not attribution["attribution_estimand"].eq(
+            LOCKED_METHOD_CONTRACT["attribution_estimand"]
+        ).all():
+            raise ValueError("Existing attribution checkpoint uses another estimand")
         audit["attribution_checkpoint"] = "PASS"
-        audit["attribution_max_efficiency_error"] = (
-            float(error.max()) if len(error) else 0.0
-        )
+        audit["attribution_max_efficiency_error"] = float(error.max())
     else:
         audit["attribution_checkpoint"] = "NOT_PRESENT"
 
     randomisation_path = output_dir / "rq2_randomisation.csv"
     if randomisation_path.exists():
         randomisation = pd.read_csv(randomisation_path)
+        required = {"benchmark", "reassignment_cell", "cell_count"}
+        missing = sorted(required - set(randomisation.columns))
+        if missing:
+            raise ValueError(
+                "Existing randomisation checkpoint predates within-year reassignment; "
+                f"missing columns: {missing}"
+            )
         signed = randomisation.loc[
             randomisation["benchmark"].eq("signed_shift_reassignment")
         ]
-        if "reassignment_cell" not in signed.columns:
-            raise ValueError(
-                "Existing randomisation checkpoint predates within-year reassignment"
-            )
+        if signed.empty:
+            raise ValueError("Randomisation checkpoint has no signed reassignment rows")
         if not signed["reassignment_cell"].eq("fiscal_year").all():
             raise ValueError("Signed shifts were not reassigned within fiscal year")
+        if not pd.to_numeric(signed["cell_count"], errors="coerce").ge(1).all():
+            raise ValueError("Randomisation checkpoint has invalid fiscal-year cells")
         audit["randomisation_checkpoint"] = "PASS"
+        audit["signed_reassignment_rows"] = int(len(signed))
     else:
         audit["randomisation_checkpoint"] = "NOT_PRESENT"
 
@@ -172,8 +209,11 @@ def run_audit(config_path: Path, check_outputs: bool = True) -> dict[str, object
     config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
     contract = validate_method_contract(config)
     output_dir = _resolve(config_path, config["paths"]["output_dir"])
+    output_dir.mkdir(parents=True, exist_ok=True)
+    audit_path = output_dir / "method_contract_audit.json"
     result = {
         "status": "PASS",
+        "audit_path": str(audit_path),
         "contract": contract,
         "contract_sha256": method_contract_sha256(contract),
         "locked_reference": LOCKED_METHOD_CONTRACT,
@@ -184,10 +224,7 @@ def run_audit(config_path: Path, check_outputs: bool = True) -> dict[str, object
             else {"status": "SKIPPED"}
         ),
     }
-    output_dir.mkdir(parents=True, exist_ok=True)
-    audit_path = output_dir / "method_contract_audit.json"
     audit_path.write_text(json.dumps(result, indent=2), encoding="utf-8")
-    result["audit_path"] = str(audit_path)
     return result
 
 
