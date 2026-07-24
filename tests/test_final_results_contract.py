@@ -25,6 +25,15 @@ def test_final_contract_is_exact() -> None:
     assert validate_final_contract(config) == LOCKED_FINAL_CONTRACT
 
 
+def test_default_year_contract_separates_lag_support() -> None:
+    settings = CompletionSettings()
+    assert settings.source_start_year == 2015
+    assert settings.training_start_year == 2016
+    assert settings.test_start_year == 2017
+    assert settings.training_start_year == settings.source_start_year + 1
+    assert settings.test_start_year == settings.training_start_year + 1
+
+
 def test_current_outcome_is_not_in_predictor_bounds() -> None:
     bounds = {
         "ta_scaled": (-0.1, 0.1),
@@ -47,7 +56,7 @@ def test_two_player_shapley_efficiency() -> None:
 def _analysis_panel() -> pd.DataFrame:
     common = {
         "issuer_ticker": "TEST",
-        "fiscal_year": 2016,
+        "fiscal_year": 2017,
         "lag_assets": 1.0,
         "inv_assets": 1.0,
         "icb_l1": "Industrials",
@@ -73,8 +82,16 @@ def _analysis_panel() -> pd.DataFrame:
 def _training_panel() -> pd.DataFrame:
     return pd.DataFrame([
         {
-            "issuer_ticker": "A",
+            "issuer_ticker": "SUPPORT",
             "fiscal_year": 2015,
+            "audit_status": "audited",
+            "ta_scaled": np.nan,
+            "inv_assets": np.nan,
+            "icb_l1": "Industrials",
+        },
+        {
+            "issuer_ticker": "A",
+            "fiscal_year": 2016,
             "audit_status": "audited",
             "ta_scaled": 0.1,
             "inv_assets": 1.0,
@@ -82,7 +99,7 @@ def _training_panel() -> pd.DataFrame:
         },
         {
             "issuer_ticker": "B",
-            "fiscal_year": 2015,
+            "fiscal_year": 2016,
             "audit_status": "audited",
             "ta_scaled": 0.2,
             "inv_assets": 2.0,
@@ -91,11 +108,12 @@ def _training_panel() -> pd.DataFrame:
     ])
 
 
-def test_separate_history_and_raw_current_outcome() -> None:
+def test_separate_lag_support_history_and_raw_current_outcome() -> None:
     settings = CompletionSettings(
-        training_start_year=2015,
-        test_start_year=2016,
-        test_end_year=2016,
+        source_start_year=2015,
+        training_start_year=2016,
+        test_start_year=2017,
+        test_end_year=2017,
         min_train_rows=2,
         min_industry_rows=2,
         bootstrap_draws=10,
@@ -112,7 +130,7 @@ def test_separate_history_and_raw_current_outcome() -> None:
         accrual.architecture.eq("pooled")
         & accrual.benchmark.eq("audited_reference")
     ].iloc[0]
-    assert audited_reference.train_min_year == 2015
+    assert audited_reference.train_min_year == 2016
     assert not bool(audited_reference.current_outcome_clipped)
     assert np.isclose(audited_reference.signed_shift, -200.0)
 
