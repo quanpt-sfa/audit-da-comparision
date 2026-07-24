@@ -22,11 +22,11 @@ from audit_da.results_completion.final_contract import (  # noqa: E402
     final_contract_sha256,
     validate_final_contract,
 )
+from audit_da.results_completion.method_locked import _within_cell_permutations  # noqa: E402
 from audit_da.results_completion.method_v2 import (  # noqa: E402
     _fit_model_no_intercept,
     _shapley_two,
 )
-from audit_da.results_completion.method_locked import _within_cell_permutations  # noqa: E402
 
 
 def resolve(config_path: Path, value: str) -> Path:
@@ -47,29 +47,37 @@ def _strict_bool(series: pd.Series, column: str) -> pd.Series:
 
 
 def _runtime_checks() -> dict[str, object]:
-    training = pd.DataFrame({
-        "inv_assets": [0.01, 0.02, 0.03, 0.04, 0.05],
-        "drev_scaled": [0.2, 0.1, -0.1, 0.3, -0.2],
-        "ta_scaled": [0.03, 0.01, -0.02, 0.05, -0.03],
-    })
+    training = pd.DataFrame(
+        {
+            "inv_assets": [0.01, 0.02, 0.03, 0.04, 0.05],
+            "drev_scaled": [0.2, 0.1, -0.1, 0.3, -0.2],
+            "ta_scaled": [0.03, 0.01, -0.02, 0.05, -0.03],
+        }
+    )
     scaler, model, _ = _fit_model_no_intercept(
-        training, ["inv_assets", "drev_scaled"]
+        training,
+        ["inv_assets", "drev_scaled"],
     )
     no_intercept = (
         model.fit_intercept is False
         and scaler.with_mean is False
         and float(model.intercept_) == 0.0
     )
+
     da_pre = np.array([0.20, -0.10, 0.05])
     pat = np.array([0.02, -0.01, 0.01])
     cfo = np.array([-0.03, 0.04, -0.02])
     phi_pat, phi_cfo = _shapley_two(da_pre, pat, cfo)
     reduction = np.abs(da_pre) - np.abs(da_pre + pat + cfo)
     shapley_error = float(np.max(np.abs(phi_pat + phi_cfo - reduction)))
+
     values = np.array([10.0, 11.0, 20.0, 21.0])
     years = np.array([2020, 2020, 2021, 2021])
     permutations = _within_cell_permutations(
-        values, years, 100, np.random.default_rng(7)
+        values,
+        years,
+        100,
+        np.random.default_rng(7),
     )
     within_year = all(
         np.all(
@@ -78,6 +86,7 @@ def _runtime_checks() -> dict[str, object]:
         )
         for indices in (np.array([0, 1]), np.array([2, 3]))
     )
+
     checks = {
         "no_ordinary_intercept": bool(no_intercept),
         "no_feature_centering": bool(not scaler.with_mean),
@@ -96,51 +105,9 @@ def _runtime_checks() -> dict[str, object]:
     return checks
 
 
-def _audit_supplemental_inputs(
-    config_path: Path,
-    config: dict,
-    *,
-    required: bool,
-) -> dict[str, object]:
-    configured = config.get("required_supplemental_paths", {})
-    result: dict[str, object] = {
-        "required": required,
-        "status": "PASS" if required else "NOT_REQUIRED_FOR_CORE",
-        "paths": {},
-    }
-    for key in ("concentration_input", "near_zero_input"):
-        value = configured.get(key)
-        if value is None:
-            if required:
-                raise ValueError(f"Required supplemental path not configured: {key}")
-            result["paths"][key] = {
-                "configured": False,
-                "exists": False,
-            }
-            continue
-        path = resolve(config_path, value)
-        exists = path.exists()
-        nonempty = bool(exists and path.stat().st_size > 0)
-        result["paths"][key] = {
-            "configured": True,
-            "path": str(path),
-            "exists": exists,
-            "nonempty": nonempty,
-        }
-        if required and not exists:
-            raise FileNotFoundError(
-                f"Required supplemental input missing: {key}={path}"
-            )
-        if required and not nonempty:
-            raise ValueError(f"Required supplemental input empty: {key}={path}")
-    return result
-
-
 def _audit_inputs(
     config_path: Path,
     config: dict,
-    *,
-    require_supplemental: bool,
 ) -> dict[str, object]:
     paths = config["paths"]
     analysis_path = resolve(config_path, paths["analysis_panel_input"])
@@ -148,7 +115,9 @@ def _audit_inputs(
     if not analysis_path.exists():
         raise FileNotFoundError(f"Locked analysis panel missing: {analysis_path}")
     if not training_path.exists():
-        raise FileNotFoundError(f"Unrestricted training panel missing: {training_path}")
+        raise FileNotFoundError(
+            f"Unrestricted training panel missing: {training_path}"
+        )
 
     settings = config["settings"]
     contract = config["final_method_contract"]
@@ -169,7 +138,10 @@ def _audit_inputs(
         )
 
     master_training = pd.read_csv(training_path, low_memory=False)
-    training, _ = select_analysis_sample(master_training, config.get("sample", {}))
+    training, _ = select_analysis_sample(
+        master_training,
+        config.get("sample", {}),
+    )
     audited_label = str(settings["audited_label"])
     source_rows = training.loc[
         training.fiscal_year.eq(source_start)
@@ -179,6 +151,7 @@ def _audit_inputs(
         raise ValueError(
             f"Training panel has no audited lag-support observations for {source_start}"
         )
+
     start_rows = training.loc[
         training.fiscal_year.eq(training_start)
         & training.audit_status.eq(audited_label)
@@ -207,7 +180,8 @@ def _audit_inputs(
         if len(complete) < minimum_rows:
             raise ValueError(
                 f"Model {model_name} has only {len(complete)} complete audited rows "
-                f"in usable training start year {training_start}; required={minimum_rows}"
+                f"in usable training start year {training_start}; "
+                f"required={minimum_rows}"
             )
 
     return {
@@ -221,11 +195,7 @@ def _audit_inputs(
         "training_start_complete_rows_by_model": complete_counts,
         "model_test_start_year": test_start,
         "direct_comparison_start_year": source_start + lag_support_years,
-        "supplemental": _audit_supplemental_inputs(
-            config_path,
-            config,
-            required=require_supplemental,
-        ),
+        "supplemental_workflow": "scripts/36_run_supplemental_diagnostics.py",
     }
 
 
@@ -233,7 +203,6 @@ def _audit_outputs(
     output_dir: Path,
     *,
     settings: dict,
-    require_supplemental: bool,
 ) -> dict[str, object]:
     required_files = {
         "accrual_estimation_manifest.csv",
@@ -245,8 +214,6 @@ def _audit_outputs(
         "applied_consequence_unique_tests.csv",
         "confirmatory_family_summary.csv",
     }
-    if require_supplemental:
-        required_files.add("supplemental_inference.csv")
     missing = sorted(
         name for name in required_files if not (output_dir / name).exists()
     )
@@ -261,7 +228,10 @@ def _audit_outputs(
         raise ValueError("Architecture used an ordinary intercept")
     if _strict_bool(estimated["feature_centering"], "feature_centering").any():
         raise ValueError("Architecture mean-centred predictors")
-    if _strict_bool(estimated["current_outcome_clipped"], "current_outcome_clipped").any():
+    if _strict_bool(
+        estimated["current_outcome_clipped"],
+        "current_outcome_clipped",
+    ).any():
         raise ValueError("Current test outcomes were clipped")
 
     expected_training_start = int(settings["training_start_year"])
@@ -283,8 +253,8 @@ def _audit_outputs(
     if not bad_test.empty:
         raise ValueError(
             "Model-based outputs do not begin in the configured first test year: "
-            f"expected={expected_model_test_start}; observed="
-            f"{bad_test.to_dict(orient='records')}"
+            f"expected={expected_model_test_start}; "
+            f"observed={bad_test.to_dict(orient='records')}"
         )
     bad_training = model_years.loc[
         model_years.earliest_training_year.ne(expected_training_start)
@@ -292,8 +262,8 @@ def _audit_outputs(
     if not bad_training.empty:
         raise ValueError(
             "Historical estimation omitted the configured usable training start year: "
-            f"expected={expected_training_start}; observed="
-            f"{bad_training.to_dict(orient='records')}"
+            f"expected={expected_training_start}; "
+            f"observed={bad_training.to_dict(orient='records')}"
         )
 
     attribution = pd.read_csv(output_dir / "rq1_attribution_cases.csv")
@@ -306,11 +276,15 @@ def _audit_outputs(
     ).all():
         raise ValueError("Attribution uses another estimand")
     if attribution.benchmark.eq("version_specific").any():
-        raise ValueError("Version-specific rows entered fixed-reference attribution")
+        raise ValueError(
+            "Version-specific rows entered fixed-reference attribution"
+        )
     if float(attribution.phi_benchmark.abs().max()) > 1.0e-12:
         raise ValueError("Compatibility benchmark component is non-zero")
     efficiency = (
-        attribution.phi_pat + attribution.phi_cfo - attribution.reduction
+        attribution.phi_pat
+        + attribution.phi_cfo
+        - attribution.reduction
     ).abs()
     if float(efficiency.max()) > 1.0e-10:
         raise ValueError("Two-player Shapley efficiency failed")
@@ -319,8 +293,13 @@ def _audit_outputs(
 
     direct = pd.read_csv(output_dir / "rq2_direct_cases.csv")
     direct_required = [
-        "pat_pre", "pat_post", "cfo_pre", "cfo_post",
-        "ta_scaled_pre", "ta_scaled_post", "lag_assets_pre",
+        "pat_pre",
+        "pat_post",
+        "cfo_pre",
+        "cfo_post",
+        "ta_scaled_pre",
+        "ta_scaled_post",
+        "lag_assets_pre",
     ]
     if direct[direct_required].isna().any().any():
         raise ValueError("Direct switching output contains incomplete cases")
@@ -329,15 +308,21 @@ def _audit_outputs(
     if observed_direct_start != expected_direct_start:
         raise ValueError(
             "Direct reporting-state comparisons should retain the first lag-usable "
-            f"year: expected={expected_direct_start}, observed={observed_direct_start}"
+            f"year: expected={expected_direct_start}, "
+            f"observed={observed_direct_start}"
         )
+
     summary = pd.read_csv(output_dir / "rq2_switch_summary.csv")
     direct_summary = summary.loc[summary.model.eq("direct")]
     if not direct_summary.denominator.eq(len(direct)).all():
-        raise ValueError("Direct switching summaries use different denominators")
+        raise ValueError(
+            "Direct switching summaries use different denominators"
+        )
 
     applied = pd.read_csv(output_dir / "applied_consequence_full.csv")
-    unique = pd.read_csv(output_dir / "applied_consequence_unique_tests.csv")
+    unique = pd.read_csv(
+        output_dir / "applied_consequence_unique_tests.csv"
+    )
     if unique.difference_test_id.duplicated().any():
         raise ValueError("Applied unique-test IDs duplicated")
     if float(applied.estimand_alignment_error.max()) > 1.0e-10:
@@ -346,17 +331,9 @@ def _audit_outputs(
     if len(signed_unique) != 3:
         raise ValueError("Expected one signed-DA test per focal variable")
 
-    supplemental_rows = 0
-    supplemental_path = output_dir / "supplemental_inference.csv"
-    if supplemental_path.exists():
-        supplemental = pd.read_csv(supplemental_path)
-        supplemental_rows = int(len(supplemental))
-    if require_supplemental and supplemental_rows == 0:
-        raise ValueError("Supplemental inference empty")
-
     return {
         "output_dir": str(output_dir),
-        "scope": "core_plus_supplemental" if require_supplemental else "core",
+        "scope": "core",
         "estimated_architectures": int(len(estimated)),
         "model_year_contract": model_years.to_dict(orient="records"),
         "model_test_start_year": expected_model_test_start,
@@ -365,62 +342,66 @@ def _audit_outputs(
         "attribution_rows": int(len(attribution)),
         "direct_switching_rows": int(len(direct)),
         "unique_applied_tests": int(len(unique)),
-        "supplemental_rows": supplemental_rows,
         "max_shapley_error": float(efficiency.max()),
-        "max_applied_alignment_error": float(applied.estimand_alignment_error.max()),
+        "max_applied_alignment_error": float(
+            applied.estimand_alignment_error.max()
+        ),
+        "supplemental_workflow": "scripts/36_run_supplemental_diagnostics.py",
     }
 
 
 def run_audit(
     config_path: Path,
     check_outputs: bool = True,
-    require_supplemental: bool = False,
 ) -> dict[str, object]:
     config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
     contract = validate_final_contract(config)
-    output_dir = resolve(config_path, config["paths"]["final_output_dir"])
+    output_dir = resolve(
+        config_path,
+        config["paths"]["final_output_dir"],
+    )
     result = {
         "status": "PASS",
-        "scope": "core_plus_supplemental" if require_supplemental else "core",
+        "scope": "core",
         "contract": contract,
         "contract_sha256": final_contract_sha256(contract),
         "runtime_checks": _runtime_checks(),
-        "inputs": _audit_inputs(
-            config_path,
-            config,
-            require_supplemental=require_supplemental,
+        "inputs": _audit_inputs(config_path, config),
+        "outputs": (
+            _audit_outputs(
+                output_dir,
+                settings=config["settings"],
+            )
+            if check_outputs
+            else {"status": "SKIPPED"}
         ),
-        "outputs": _audit_outputs(
-            output_dir,
-            settings=config["settings"],
-            require_supplemental=require_supplemental,
-        ) if check_outputs else {"status": "SKIPPED"},
     }
     output_dir.mkdir(parents=True, exist_ok=True)
-    suffix = "full" if require_supplemental else "core"
-    audit_path = output_dir / f"final_results_audit_{suffix}.json"
-    audit_path.write_text(json.dumps(result, indent=2), encoding="utf-8")
+    audit_path = output_dir / "final_results_audit_core.json"
+    audit_path.write_text(
+        json.dumps(result, indent=2),
+        encoding="utf-8",
+    )
     result["audit_path"] = str(audit_path)
     return result
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Audit the final Results contract")
-    parser.add_argument("--config", default="config/results_completion.yaml")
-    parser.add_argument("--skip-existing-outputs", action="store_true")
+    parser = argparse.ArgumentParser(
+        description="Audit the final core Results contract"
+    )
     parser.add_argument(
-        "--include-supplemental",
+        "--config",
+        default="config/results_completion.yaml",
+    )
+    parser.add_argument(
+        "--skip-existing-outputs",
         action="store_true",
-        help=(
-            "Also require and audit line-item concentration and near-zero-CFO "
-            "supplemental inputs/outputs. Core audit does not require raw CFS data."
-        ),
     )
     args = parser.parse_args()
     result = run_audit(
         Path(args.config).resolve(),
         check_outputs=not args.skip_existing_outputs,
-        require_supplemental=args.include_supplemental,
     )
     print(json.dumps(result, indent=2))
 
