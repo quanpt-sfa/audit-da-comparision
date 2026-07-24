@@ -1,6 +1,8 @@
 paths:
   input: data/raw/financial_statement_full_long.csv.gz
   processed_panel: data/processed/accrual_panel.csv.gz
+  industry_input: data/raw/bctc_industry_icb.csv
+  audit_metadata_input: data/raw/bctc_audit_annual_long.csv
   posterior_output: artifacts/paired_da_posterior.csv.gz
   fold_output: artifacts/rolling_fold_diagnostics.csv
   report_output: artifacts/SIGNAL_GATE_REPORT.md
@@ -24,6 +26,11 @@ input:
     - casefold_match
   minimum_year: 2015
   maximum_year: 2025
+
+sample:
+  exclude_financial_firms: true
+  unknown_industry_policy: exclude
+  retain_excluded_rows_in_master_panel: true
 
 items:
   assets: balance_sheet__a_tong_cong_tai_san
