@@ -21,7 +21,10 @@ def resolve(config_path: Path, value: str) -> Path:
 
 
 def _load_audit_module():
-    spec = importlib.util.spec_from_file_location("final_results_audit", AUDIT_SCRIPT)
+    spec = importlib.util.spec_from_file_location(
+        "final_results_audit",
+        AUDIT_SCRIPT,
+    )
     if spec is None or spec.loader is None:
         raise RuntimeError(f"Cannot import final audit script: {AUDIT_SCRIPT}")
     module = importlib.util.module_from_spec(spec)
@@ -32,21 +35,17 @@ def _load_audit_module():
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
-            "Delete stale outputs, audit required inputs, run the final Results "
-            "pipeline, and audit the completed bundle. Core scope is the default."
+            "Delete stale outputs, audit required inputs, run the final core "
+            "Results pipeline, and audit the completed bundle. Supplemental "
+            "diagnostics use scripts/36_run_supplemental_diagnostics.py."
         )
     )
-    parser.add_argument("--config", default="config/results_completion.yaml")
+    parser.add_argument(
+        "--config",
+        default="config/results_completion.yaml",
+    )
     parser.add_argument("--workers", type=int, default=None)
     parser.add_argument("--simulation-batch-size", type=int, default=None)
-    parser.add_argument(
-        "--include-supplemental",
-        action="store_true",
-        help=(
-            "Also require and run line-item concentration and near-zero-CFO "
-            "supplemental diagnostics. This scope may require raw CFS data."
-        ),
-    )
     parser.add_argument(
         "--clean",
         action="store_true",
@@ -57,7 +56,10 @@ def main() -> None:
 
     config_path = Path(args.config).resolve()
     config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
-    output_dir = resolve(config_path, config["paths"]["final_output_dir"])
+    output_dir = resolve(
+        config_path,
+        config["paths"]["final_output_dir"],
+    )
     if output_dir.exists():
         shutil.rmtree(output_dir)
         print(f"[final-run] removed stale outputs: {output_dir}")
@@ -66,7 +68,6 @@ def main() -> None:
     pre = audit_module.run_audit(
         config_path,
         check_outputs=False,
-        require_supplemental=args.include_supplemental,
     )
     print(
         "[final-run] input and method contract PASS: "
@@ -80,27 +81,35 @@ def main() -> None:
         str(config_path),
         "--overwrite",
     ]
-    if args.include_supplemental:
-        command.append("--include-supplemental")
     if args.workers is not None:
         command.extend(["--workers", str(max(1, args.workers))])
     if args.simulation_batch_size is not None:
-        command.extend([
-            "--simulation-batch-size",
-            str(max(1, args.simulation_batch_size)),
-        ])
+        command.extend(
+            [
+                "--simulation-batch-size",
+                str(max(1, args.simulation_batch_size)),
+            ]
+        )
 
     print("[final-run] executing:", " ".join(command))
-    completed = subprocess.run(command, cwd=REPO_ROOT, check=False)
+    completed = subprocess.run(
+        command,
+        cwd=REPO_ROOT,
+        check=False,
+    )
     if completed.returncode != 0:
         raise SystemExit(completed.returncode)
 
     final = audit_module.run_audit(
         config_path,
         check_outputs=True,
-        require_supplemental=args.include_supplemental,
     )
     print(f"[final-run] completed and audited: {final['audit_path']}")
+    print(
+        "[final-run] supplemental workflow: "
+        "python scripts/36_run_supplemental_diagnostics.py "
+        "--config config/supplemental_diagnostics.yaml"
+    )
 
 
 if __name__ == "__main__":
