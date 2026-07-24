@@ -9,6 +9,14 @@ sample:
   exclude_financial_firms: true
   unknown_industry_policy: exclude
 
+panel_contract:
+  required_columns:
+    - icb_l1
+    - financial_flag
+    - auditor_group
+    - big4_flag
+    - audit_opinion_group
+
 settings:
   audited_label: audited
   unaudited_label: unaudited
