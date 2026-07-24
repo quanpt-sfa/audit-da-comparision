@@ -1,0 +1,54 @@
+\subsection{Applied empirical conclusions change selectively}\label{subsec:results_conclusion_sensitivity}
+
+The completion panel does not contain Big Four status, so the applied-consequence analysis is restricted to the 16 short-term-debt and loss specifications that can be estimated with the prespecified controls. Short-term-debt intensity is scaled by beginning assets, and current ratio is reconstructed from pre-audit current assets and current liabilities. Continuous controls are winsorised at the first and ninety-ninth percentiles within model.
+
+Table~\ref{tab:research_conclusion_sensitivity} reports the modified-Jones results. The short-term-debt association with signed DA increases from 0.142 to 0.175. Both the stacked interaction and paired-difference tests remain significant after Benjamini--Hochberg adjustment. The corresponding high-$|DA|$ association does not change significantly. Loss status is associated with more negative signed DA in both states, with a significant additional post-audit difference. For high-$|DA|$, the loss coefficient changes from statistically insignificant to positive and significant; both difference tests survive multiplicity adjustment. These results show selective state dependence rather than a general reversal of archival conclusions.
+
+\begin{table}[htbp]
+\centering
+\caption{Applied-consequence sensitivity under modified Jones}
+\label{tab:research_conclusion_sensitivity}
+\scriptsize
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{llrrrrrr}
+\toprule
+Focal variable & Outcome & Pre coefficient ($p$) & Post coefficient ($p$) & Difference / pre SD & Interaction ($p$, $q$) & Paired difference ($p$, $q$) & Status switch \\
+\midrule
+Short-term debt & Signed DA & 0.1422 ($<0.001$) & 0.1750 ($<0.001$) & 0.241 & 0.0299 ($<0.001$, 0.001) & 0.0328 ($<0.001$, 0.002) & No \\
+Short-term debt & High $|DA|$ & 0.3788 ($<0.001$) & 0.3507 ($<0.001$) & -0.088 & -0.0057 (0.754, 0.804) & -0.0281 (0.167, 0.205) & No \\
+Loss & Signed DA & -0.0265 ($<0.001$) & -0.0377 ($<0.001$) & -0.082 & -0.0070 (0.026, 0.038) & -0.0112 (0.006, 0.012) & No \\
+Loss & High $|DA|$ & 0.0207 (0.190) & 0.0458 (0.004) & 0.078 & 0.0327 ($<0.001$, 0.001) & 0.0251 (0.016, 0.028) & Yes \\
+\bottomrule
+\end{tabular}%
+}
+\begin{minipage}{0.97\textwidth}\footnotesize
+\textit{Notes:} $N=7{,}788$ issuer-years and 1,015 issuers. Models include pre-audit size, ROA, current ratio, short-term-debt intensity, loss status, fiscal-year fixed effects, and ICB Level-1 industry fixed effects, excluding the focal regressor from the remaining controls. Standard errors are clustered by issuer. $q$-values apply Benjamini--Hochberg adjustment across the 16 estimable applied-consequence specifications.
+\end{minipage}
+\end{table}
+
+Across the 16 estimable specifications, 11 stacked interactions and 11 paired-difference coefficients have $q<0.05$, while only two separate-state significance-status switches occur. The latter are the Jones and modified-Jones loss--high-$|DA|$ specifications. This contrast reinforces the reporting hierarchy in Section~\ref{subsec:conclusion_sensitivity_design}: direct coefficient-difference tests detect state dependence more often than a binary significance-status comparison.
+
+\subsection{Confirmatory decisions and execution limits}\label{subsec:results_confirmatory}
+
+Table~\ref{tab:confirmatory_summary} applies the three prespecified intersection--union rules. The RQ1 family rejects because both Jones-family median component contrasts are positive. The RQ2 coverage family rejects because all three direct outside-gate shares exceed one half with issuer-cluster lower bounds above one half. The RQ2 excess-switching family rejects because CFO sign and all four model-specific DA-sign rates exceed their symmetric-sign benchmarks. All three conclusions remain after Holm adjustment.
+
+\begin{table}[htbp]
+\centering
+\caption{Confirmatory family decisions}
+\label{tab:confirmatory_summary}
+\small
+\begin{tabular}{lrrl}
+\toprule
+Family & Components & Family $p$ & Holm-adjusted decision \\
+\midrule
+RQ1 component attribution & 2 & 0.0005 & Reject ($p_{\mathrm{Holm}}=0.0015$) \\
+RQ2 profit-gate coverage & 3 & 0.0020 & Reject ($p_{\mathrm{Holm}}=0.0020$) \\
+RQ2 excess switching & 5 & 0.0005 & Reject ($p_{\mathrm{Holm}}=0.0015$) \\
+\bottomrule
+\end{tabular}
+\begin{minipage}{0.94\textwidth}\footnotesize
+\textit{Notes:} Each family probability is the largest component probability required by the corresponding intersection--union rule. Holm adjustment is applied across the three families.
+\end{minipage}
+\end{table}
+
+Two execution limits remain outside these confirmatory conclusions. First, Big Four status is absent from the completion panel, so four model-specific Big Four designs are not estimated. Second, the optional concentration and near-zero input files were not included in the completion bundle; no new supplemental-channel inference is therefore reported here. Neither omission enters the three prespecified confirmatory family rules.

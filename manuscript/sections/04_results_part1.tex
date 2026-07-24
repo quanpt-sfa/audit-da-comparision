@@ -1,0 +1,75 @@
+\subsection{RQ2: switching occurs outside the profit gate}\label{subsec:results_switching}
+
+The primary five-percent profit gate is inactive for 6,360 of the 8,461 complete direct-comparison issuer-years. Table~\ref{tab:inference_switching} shows that 8.0 percent of observations switch non-zero CFO sign, 20.5 percent cross a common fiscal-year CFO-quintile boundary, and 5.1 percent switch high-$|TA|$ membership. Among switchers, 61.7, 65.8, and 59.0 percent, respectively, are outside the profit gate. All three issuer-cluster lower confidence bounds exceed one half. Switches are not numerically trivial: the median CFO difference among sign switchers is 8.8 percent of beginning assets and its ninetieth percentile is 40.0 percent; high-$|TA|$ switchers have a median absolute-membership-distance measure of 19.1 percent of assets.
+
+\begin{table}[htbp]
+\centering
+\caption{Direct reporting-state switching and profit-gate coverage}
+\label{tab:inference_switching}
+\scriptsize
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lrrrrrr}
+\toprule
+Outcome & $N$ & Switches & Switch rate [95\% CI] & Outside-gate share [95\% CI] & Median magnitude & P90 magnitude \\
+\midrule
+CFO sign & 8,461 & 681 & 8.0\% [7.3, 8.8] & 61.7\% [57.3, 66.0] & 0.088 & 0.400 \\
+Common-boundary CFO category & 8,461 & 1,734 & 20.5\% [19.3, 21.8] & 65.8\% [62.7, 68.6] & 1 category & 3 categories \\
+High $|TA|$ & 8,461 & 434 & 5.1\% [4.5, 5.8] & 59.0\% [53.0, 64.3] & 0.191 & 0.579 \\
+\bottomrule
+\end{tabular}%
+}
+\begin{minipage}{0.97\textwidth}\footnotesize
+\textit{Notes:} A CFO-sign switch requires both state values to be non-zero and to have opposite signs. CFO categories use post-audit-state fiscal-year quintile boundaries applied to both states. High-$|TA|$ uses the post-audit-state fiscal-year ninetieth percentile. Intervals are issuer-cluster bootstrap percentile intervals.
+\end{minipage}
+\end{table}
+
+Model-based switching is similarly stable across specifications (Table~\ref{tab:da_switching}). Under the post-audit-reference benchmark, DA-sign switching ranges from 10.4 to 10.8 percent and high-$|DA|$ switching from 4.9 to 5.1 percent. Between 61.6 and 64.5 percent of DA-sign switches and between 59.2 and 60.3 percent of high-$|DA|$ switches lie outside the profit gate. Pooled high-$|DA|$ Jaccard overlap ranges from 0.617 to 0.632, with year-specific values spanning approximately 0.534 to 0.704. The median common-CDF percentile displacement is 2.3--2.5 percentile points, whereas the ninetieth percentile is approximately 31 points, indicating modest central movement but substantial upper-tail reordering.
+
+\begin{table}[htbp]
+\centering
+\caption{Discretionary-accrual switching across model families}
+\label{tab:da_switching}
+\scriptsize
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lrrrrrr}
+\toprule
+Model & $N$ & DA-sign switch [95\% CI] & Sign switches outside gate [95\% CI] & High-$|DA|$ switch & High-$|DA|$ outside gate & Jaccard \\
+\midrule
+Jones & 7,801 & 10.5\% [9.7, 11.3] & 62.4\% [58.6, 66.4] & 4.9\% & 59.2\% & 0.632 \\
+Modified Jones & 7,801 & 10.4\% [9.6, 11.3] & 64.5\% [60.4, 68.4] & 4.9\% & 59.6\% & 0.628 \\
+Kothari-style ROA-adjusted & 7,801 & 10.8\% [10.0, 11.7] & 61.6\% [57.6, 65.4] & 5.1\% & 59.8\% & 0.617 \\
+Nonlinear modified Jones & 7,801 & 10.8\% [9.9, 11.7] & 61.7\% [57.7, 65.6] & 5.1\% & 60.3\% & 0.617 \\
+\bottomrule
+\end{tabular}%
+}
+\begin{minipage}{0.97\textwidth}\footnotesize
+\textit{Notes:} Results use pooled historical models and the post-audit-reference benchmark. High-$|DA|$ uses a common post-audit-state fiscal-year ninetieth-percentile boundary. Jaccard overlap is calculated from pooled eligible memberships.
+\end{minipage}
+\end{table}
+
+Table~\ref{tab:switch_benchmarks} compares observed sign switching with both neutral benchmarks. CFO-sign switching exceeds the symmetric-sign 97.5th percentile but is below the signed-shift-reassignment distribution. In contrast, all four DA-sign rates exceed the 97.5th percentile of both benchmarks. Thus, CFO switching is unusually high relative to neutral shift directions of the same magnitudes, but not relative to the unconditional within-year distribution of observed signed CFO shifts. DA switching remains unusually high under both comparisons.
+
+\begin{table}[htbp]
+\centering
+\caption{State-independent sign-switch benchmarks for RQ2}
+\label{tab:switch_benchmarks}
+\scriptsize
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{llrrr}
+\toprule
+Outcome & Model & Observed & Symmetric-sign mean [95\% interval] & Signed-shift reassignment mean [95\% interval] \\
+\midrule
+CFO sign & Direct & 8.05\% & 6.65\% [6.26, 7.04] & 10.18\% [9.66, 10.72] \\
+DA sign & Jones & 10.51\% & 8.20\% [7.76, 8.63] & 9.26\% [8.70, 9.82] \\
+DA sign & Modified Jones & 10.45\% & 8.15\% [7.73, 8.59] & 9.21\% [8.67, 9.74] \\
+DA sign & Kothari-style ROA-adjusted & 10.82\% & 8.24\% [7.78, 8.67] & 9.32\% [8.78, 9.87] \\
+DA sign & Nonlinear modified Jones & 10.78\% & 8.10\% [7.65, 8.56] & 9.26\% [8.73, 9.79] \\
+\bottomrule
+\end{tabular}%
+}
+\begin{minipage}{0.97\textwidth}\footnotesize
+\textit{Notes:} Each benchmark uses 2,000 draws. Signed shifts are reassigned within fiscal-year cells and, for DA, within model--fiscal-year cells. For the symmetric-sign benchmark, all one-sided Monte Carlo probabilities are below 0.001. Under signed-shift reassignment, the CFO probability equals 1.000 and every DA probability is below 0.001.
+\end{minipage}
+\end{table}
+
+Coverage depends on how narrowly the profit gate is defined. When the numerical threshold is reduced from 5.0 to 2.5 percent, the outside-gate shares fall to 48.8 percent for CFO sign, 54.1 percent for CFO category, and 49.8 percent for high-$|TA|$; the intersection--union coverage rule therefore does not hold at the narrower threshold. At 5.0, 7.5, and 10.0 percent, all three point estimates exceed one half. This sensitivity is a boundary condition on the interpretation: the evidence supports incomplete coverage by the prespecified five-percent gate, not by every possible profit-change convention.

@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 
 from .analysis_window import AnalysisWindow
+from .bctc_auditor_source import canonicalize_entity_ticker
 from .io import read_long_chunks
 
 KEYS = ["issuer_ticker", "raw_exchange", "fiscal_year", "audit_status", "scope"]
@@ -108,7 +109,23 @@ def extract_wide_panel(path: str | Path, config: dict[str, Any]) -> pd.DataFrame
     reverse = {source_id: variable for variable, source_id in item_map.items()}
     input_cfg = config["input"]
     window = _analysis_window(config)
-    usecols = KEYS + [
+    header = list(
+        pd.read_csv(
+            path,
+            compression="gzip" if str(path).endswith(".gz") else "infer",
+            nrows=0,
+        ).columns
+    )
+    firm_name_column = next(
+        (
+            column
+            for column in ("firm_name_raw", "firm_name", "company_name")
+            if column in header
+        ),
+        None,
+    )
+    optional_columns = [firm_name_column] if firm_name_column else []
+    usecols = KEYS + optional_columns + [
         "source_item_id",
         "value_numeric",
         "identity_match_status",
@@ -132,6 +149,17 @@ def extract_wide_panel(path: str | Path, config: dict[str, Any]) -> pd.DataFrame
         ].copy()
         if chunk.empty:
             continue
+        firm_names = (
+            chunk[firm_name_column]
+            if firm_name_column
+            else pd.Series(pd.NA, index=chunk.index)
+        )
+        chunk["issuer_ticker"] = [
+            canonicalize_entity_ticker(ticker, firm_name)
+            for ticker, firm_name in zip(
+                chunk["issuer_ticker"], firm_names, strict=True
+            )
+        ]
         chunk["variable"] = chunk["source_item_id"].map(reverse)
         chunk["value_numeric"] = pd.to_numeric(chunk["value_numeric"], errors="coerce")
         chunk["fiscal_year"] = chunk["fiscal_year"].astype("Int64")
