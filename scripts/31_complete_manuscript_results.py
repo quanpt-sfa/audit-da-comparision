@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import replace
 from pathlib import Path
 import sys
 
@@ -14,6 +15,7 @@ if str(SRC_ROOT) not in sys.path:
 
 from audit_da.results_completion import (  # noqa: E402
     CompletionSettings,
+    applied_consequence_tables,
     attribution_tables,
     build_attribution_cases,
     confirmatory_summary,
@@ -21,13 +23,12 @@ from audit_da.results_completion import (  # noqa: E402
     estimate_accrual_architectures,
     profit_gate_sensitivity,
     randomisation_benchmarks,
+    sample_exclusion_manifest,
+    supplemental_inference,
     switching_cases,
     switching_tables,
-    write_outputs,
-    sample_exclusion_manifest,
     time_shift_benchmarks,
-    applied_consequence_tables,
-    supplemental_inference,
+    write_outputs,
 )
 
 
@@ -49,8 +50,8 @@ RESUME_TABLES = (
 
 
 def resolve(config_path: Path, value: str) -> Path:
-    p = Path(value)
-    return p if p.is_absolute() else (config_path.parent.parent / p).resolve()
+    path = Path(value)
+    return path if path.is_absolute() else (config_path.parent.parent / path).resolve()
 
 
 def stage(message: str) -> None:
@@ -72,6 +73,24 @@ def load_resume_tables(output_dir: Path) -> dict[str, pd.DataFrame]:
     return tables
 
 
+def load_or_compute_checkpoint(
+    name: str,
+    output_dir: Path,
+    resume: bool,
+    compute,
+) -> pd.DataFrame:
+    path = output_dir / f"{name}.csv"
+    if resume and path.exists():
+        frame = pd.read_csv(path)
+        stage(f"loaded heavy checkpoint {name} ({len(frame):,} rows)")
+        return frame
+    frame = compute()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    frame.to_csv(path, index=False)
+    stage(f"wrote heavy checkpoint {name} ({len(frame):,} rows)")
+    return frame
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Complete manuscript Results outputs required by the locked research design"
@@ -81,20 +100,45 @@ def main() -> None:
         "--resume",
         action="store_true",
         help=(
-            "Reuse architecture, attribution, and switching CSV checkpoints already "
-            "written to output_dir, then compute only the remaining outputs."
+            "Reuse architecture, attribution, switching, and completed heavy-stage "
+            "CSV checkpoints already written to output_dir."
         ),
     )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=None,
+        help="Override process workers. Use 31 on a 32-core workstation.",
+    )
+    parser.add_argument(
+        "--simulation-batch-size",
+        type=int,
+        default=None,
+        help="Override vectorized simulation batch size; 32 is memory-conservative.",
+    )
     args = parser.parse_args()
+
     config_path = Path(args.config).resolve()
     config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
     settings = CompletionSettings(**config.get("settings", {}))
+    if args.workers is not None:
+        settings = replace(settings, parallel_workers=max(1, args.workers))
+    if args.simulation_batch_size is not None:
+        settings = replace(
+            settings, simulation_batch_size=max(1, args.simulation_batch_size)
+        )
+
     panel_path = resolve(config_path, config["paths"]["panel_input"])
     output_dir = resolve(config_path, config["paths"]["output_dir"])
 
     stage(f"loading panel: {panel_path}")
     panel = pd.read_csv(panel_path)
     stage(f"panel loaded ({len(panel):,} rows)")
+    stage(
+        f"parallel settings: workers={settings.parallel_workers or 'auto'}, "
+        f"batch_size={settings.simulation_batch_size}, "
+        f"BLAS_threads_per_worker={settings.blas_threads_per_worker}"
+    )
 
     if args.resume:
         stage(f"resuming from CSV checkpoints in {output_dir}")
@@ -110,13 +154,17 @@ def main() -> None:
                 panel,
                 settings,
                 models=config["models"],
-                industry_column=config.get("columns", {}).get("industry", "icb_industry"),
+                industry_column=config.get("columns", {}).get(
+                    "industry", "icb_industry"
+                ),
             )
         else:
             accrual, estimation_manifest = estimate_accrual_architectures(
                 panel,
                 settings,
-                industry_column=config.get("columns", {}).get("industry", "icb_industry"),
+                industry_column=config.get("columns", {}).get(
+                    "industry", "icb_industry"
+                ),
             )
         stage(f"accrual architectures complete ({len(accrual):,} rows)")
 
@@ -128,35 +176,66 @@ def main() -> None:
             "rq1_attribution_cases": attribution_cases,
         }
         tables.update(direct_revision_tables(panel, settings))
-        stage("running issuer-cluster attribution inference")
-        tables.update(attribution_tables(attribution_cases, settings))
+        stage("running vectorized issuer-cluster attribution inference")
+        tables.update(attribution_tables(attribution_cases, settings, progress=stage))
 
         stage("constructing RQ2 switching cases")
         direct, model_cases = switching_cases(accrual, panel, settings)
         tables["rq2_direct_cases"] = direct
         tables["rq2_model_cases"] = model_cases
-        stage("running issuer-cluster switching inference")
-        tables.update(switching_tables(direct, model_cases, settings))
+        stage("running vectorized issuer-cluster switching inference")
+        tables.update(switching_tables(direct, model_cases, settings, progress=stage))
+
+        output_dir.mkdir(parents=True, exist_ok=True)
+        for name in RESUME_TABLES:
+            tables[name].to_csv(output_dir / f"{name}.csv", index=False)
+        stage("wrote base resume checkpoints")
 
     stage("running profit-gate threshold sensitivity")
-    tables["rq2_profit_gate_sensitivity"] = profit_gate_sensitivity(
-        direct, model_cases, settings
+    tables["rq2_profit_gate_sensitivity"] = load_or_compute_checkpoint(
+        "rq2_profit_gate_sensitivity",
+        output_dir,
+        args.resume,
+        lambda: profit_gate_sensitivity(direct, model_cases, settings),
     )
-    stage("running RQ2 randomisation benchmarks")
-    tables["rq2_randomisation"] = randomisation_benchmarks(
-        direct, model_cases, settings
+
+    stage("running vectorized RQ2 randomisation benchmarks")
+    tables["rq2_randomisation"] = load_or_compute_checkpoint(
+        "rq2_randomisation",
+        output_dir,
+        args.resume,
+        lambda: randomisation_benchmarks(
+            direct, model_cases, settings, progress=stage
+        ),
     )
+
     tables["sample_exclusion_manifest"] = sample_exclusion_manifest(
         panel, accrual, settings
     )
 
-    stage("running RQ1 time-shift donor benchmarks")
-    tables["rq1_time_shift_benchmarks"] = time_shift_benchmarks(
-        attribution_cases, panel, settings
+    stage("running vectorized RQ1 time-shift donor benchmarks")
+    tables["rq1_time_shift_benchmarks"] = load_or_compute_checkpoint(
+        "rq1_time_shift_benchmarks",
+        output_dir,
+        args.resume,
+        lambda: time_shift_benchmarks(
+            attribution_cases, panel, settings, progress=stage
+        ),
     )
 
     stage("running all applied-consequence comparisons")
-    applied, applied_manifest = applied_consequence_tables(accrual, panel, settings)
+    applied_path = output_dir / "applied_consequence_full.csv"
+    applied_manifest_path = output_dir / "applied_consequence_manifest.csv"
+    if args.resume and applied_path.exists() and applied_manifest_path.exists():
+        applied = pd.read_csv(applied_path)
+        applied_manifest = pd.read_csv(applied_manifest_path)
+        stage("loaded applied-consequence checkpoints")
+    else:
+        applied, applied_manifest = applied_consequence_tables(accrual, panel, settings)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        applied.to_csv(applied_path, index=False)
+        applied_manifest.to_csv(applied_manifest_path, index=False)
+        stage("wrote applied-consequence checkpoints")
     tables["applied_consequence_full"] = applied
     tables["applied_consequence_manifest"] = applied_manifest
 
@@ -189,6 +268,9 @@ def main() -> None:
             "seed": settings.seed,
             "bootstrap_draws": settings.bootstrap_draws,
             "simulation_draws": settings.simulation_draws,
+            "parallel_workers": settings.parallel_workers,
+            "simulation_batch_size": settings.simulation_batch_size,
+            "blas_threads_per_worker": settings.blas_threads_per_worker,
             "resumed": args.resume,
         },
     )
