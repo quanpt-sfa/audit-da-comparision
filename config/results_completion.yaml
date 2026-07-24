@@ -3,7 +3,11 @@ paths:
   output_dir: artifacts/manuscript_results
 
 columns:
-  industry: icb_industry
+  industry: icb_l1
+
+sample:
+  exclude_financial_firms: true
+  unknown_industry_policy: exclude
 
 settings:
   audited_label: audited
