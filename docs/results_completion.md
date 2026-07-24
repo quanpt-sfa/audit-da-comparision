@@ -1,17 +1,16 @@
 # Manuscript Results completion workflow
 
-The Chapter 4 workflow has four mandatory layers:
+> **Authoritative submission workflow:** use scripts `34`--`35` and `artifacts/manuscript_results_final/`. Scripts `31`--`33` and `artifacts/manuscript_results/` are retained only to audit superseded outputs.
+
+The final Chapter 4 workflow has five mandatory layers:
 
 1. rebuild and enrich the unrestricted paired panel;
-2. reapply the previously locked issuer-year population;
-3. select the nonfinancial Chapter 4 analysis sample;
-4. pass the locked Jones, Shapley, and randomisation method contract.
+2. reapply the locked issuer-year test population;
+3. retain unrestricted prior audited observations for model estimation;
+4. select nonfinancial analysis and training populations separately;
+5. pass the final sample, estimator, attribution, randomisation, applied-test, and supplemental-input contracts.
 
-This separation prevents metadata enrichment or implementation drift from silently changing the population or estimand contracts.
-
-## Required inputs
-
-Place the files at the configured paths:
+## Required source inputs
 
 ```text
 data/raw/financial_statement_full_long.csv.gz
@@ -20,101 +19,89 @@ data/raw/bctc_audit_annual_long.csv
 artifacts/population_lock/population_eligible_keys.csv
 ```
 
-The audit file supplies both `audit_firm` and `audit_opinion` rows. Known reused symbols are canonicalised by legal entity name:
-
-- Container Miền Trung remains `VSM`;
-- Chứng khoán VSM becomes `VSMS`;
-- Gạch Ngói Từ Sơn remains `VTS`;
-- Chứng khoán Việt Thành becomes `VTSC`.
-
-If the financial-statement source has no legal-name field, VSM and VTS are accepted only when every remaining row is associated with a recognised listed exchange. OTC or unresolved rows block the build.
-
-## Rebuild enriched unrestricted and locked panels
+Rebuild the enriched panels:
 
 ```powershell
 python .\scripts\01_build_panel.py `
   --config .\config\signal_gate.yaml
 ```
 
-The script writes:
+This must write:
 
 ```text
 data/processed/accrual_panel_unrestricted.csv.gz
 data/processed/accrual_panel.csv.gz
 ```
 
-`accrual_panel_unrestricted.csv.gz` contains every paired issuer-year available from the financial-statement extraction, enriched with ICB and audit metadata. `accrual_panel.csv.gz` contains only the issuer-year keys in `population_eligible_keys.csv`. Every locked issuer-year must have exactly two reporting-state rows.
+The unrestricted file supplies historical audited estimation observations. The locked file supplies only Chapter 4 test issuer-years. Both files are filtered to nonfinancial firms by the final runner, but only the test file is subject to the issuer-year population lock.
 
-The locked file must contain at least:
+## Required final-analysis inputs
 
 ```text
-icb_l1
-financial_flag
-auditor_group
-big4_flag
-audit_opinion_group
-analysis_eligible
-exclusion_reason
+data/processed/accrual_panel.csv.gz
+data/processed/accrual_panel_unrestricted.csv.gz
+artifacts/cfs_shifting_validation/concentration_cases.csv
+artifacts/cfs_shifting_validation/near_zero_randomisation.csv
 ```
 
-Financial firms remain observable in the unrestricted panel. The population lock and the Chapter 4 runner record any financial and unknown-industry exclusions explicitly.
+The unrestricted panel must contain audited rows in fiscal year 2015. The final workflow stops rather than silently starting estimation in 2016. The concentration and near-zero inputs are also required; an empty supplemental table is not accepted.
 
-## Locked method contract
+## Final method contract
 
-The Chapter 4 completion run uses:
+The authoritative run uses:
 
 - no ordinary intercept in Jones-family normal-accrual regressions;
 - predictor scaling without mean centring;
 - `inv_assets` as the scale regressor;
-- exact three-player PAT--CFO--benchmark-residual Shapley attribution;
-- signed-shift reassignment within fiscal year.
+- historical-only outcome winsorisation: current-state `ta_scaled` is not clipped;
+- exact two-player PAT--CFO Shapley attribution for fixed-reference benchmarks;
+- a separate diagnostic for version-specific benchmark movement;
+- one common complete-case population for direct switching;
+- signed-shift reassignment within fiscal year;
+- paired-difference regression as the primary applied state-dependence test;
+- fully interacted stacked sensitivity models;
+- one unique signed-DA change test per focal variable before multiplicity adjustment.
 
-The full rationale and invariants are documented in `docs/method_contract_corrections.md`.
+The complete specification is in `docs/final_results_contract_v2.md`.
 
-Run the audit independently:
+## Focused tests
 
 ```powershell
-python .\scripts\32_audit_method_contract.py `
+pytest -q `
+  tests\test_final_results_contract.py `
+  tests\test_method_contract.py `
+  tests\test_switching_complete_case.py `
+  tests\test_results_completion.py `
+  tests\test_results_parallel.py
+```
+
+## Pre-run audit
+
+```powershell
+python .\scripts\34_audit_final_results_contract.py `
   --config .\config\results_completion.yaml `
   --skip-existing-outputs
 ```
 
-## Parallel configuration
-
-The heavy bootstrap and simulation stages use `ProcessPoolExecutor`. The default configuration is tuned for a Windows workstation with 32 physical cores and 63 logical threads:
-
-- `parallel_workers: 31`
-- `simulation_batch_size: 32`
-- `blas_threads_per_worker: 1`
-
-Limiting BLAS to one thread per process prevents each worker from spawning its own OpenMP pool.
-
-## Clean corrected Chapter 4 run
-
-Do not invoke the legacy completion entrypoint directly for the final run. Use the guarded wrapper, which deletes legacy checkpoints, audits the method contract, runs the completion pipeline, and audits the generated bundle again:
+## Final clean run
 
 ```powershell
-python .\scripts\33_run_method_corrected_results.py `
+python .\scripts\35_run_final_results.py `
   --config .\config\results_completion.yaml `
   --clean `
   --workers 31 `
-  --simulation-batch-size 32
+  --simulation-batch-size 32 `
+  2>&1 | Tee-Object .\artifacts\chapter4_final_v2.log
 ```
 
-The underlying runner writes `analysis_sample_contract.json` before estimation. The method audit writes `method_contract_audit.json`. Together they record the selected issuer-year-state keys and the locked estimator, attribution, and randomisation definitions.
+Final outputs are written to:
 
-## Resume from compatible checkpoints
-
-Resume only through the guarded wrapper:
-
-```powershell
-python .\scripts\33_run_method_corrected_results.py `
-  --config .\config\results_completion.yaml `
-  --resume `
-  --workers 31 `
-  --simulation-batch-size 32
+```text
+artifacts/manuscript_results_final/
 ```
 
-Resume is refused when architecture checkpoints lack the no-intercept fields, attribution checkpoints lack the three-player efficiency fields, randomisation checkpoints lack the fiscal-year cell declaration, or the sample contract differs.
+The wrapper deletes stale final outputs, audits all required inputs, executes the full pipeline, and audits the generated bundle. Resume is intentionally disabled because the estimator, attribution estimand, applied test family, and training population changed together.
 
-The runner writes base checkpoints after architecture, attribution, and switching construction. It writes separate heavy-stage checkpoints after profit-gate sensitivity, randomisation, time-shift simulation, and applied-consequence estimation. Time-shift is split by model, reference benchmark, and donor design, producing up to 36 independent process tasks.
+## Manuscript integration
+
+Do not update or merge Chapter 4 from the legacy output directory. After the final post-run audit passes, regenerate Chapter 4, Discussion, Conclusion, and the Round 48 LaTeX project only from `artifacts/manuscript_results_final/`.
