@@ -23,6 +23,20 @@ REQUIRED_COLUMNS = (
     "source_file",
 )
 
+OPTIONAL_ENTITY_COLUMNS = (
+    "source_ticker_raw",
+    "firm_name_raw",
+    "exchange_raw",
+)
+
+# The raw BCTC source historically reused VSM and VTS for two distinct legal
+# entities. Canonicalisation must therefore use the entity name, not a global
+# ticker replacement.
+ENTITY_TICKER_OVERRIDES = {
+    ("VSM", "chung_khoan_vsm"): "VSMS",
+    ("VTS", "chung_khoan_viet_thanh"): "VTSC",
+}
+
 
 def _token(value: Any) -> str:
     if value is None or pd.isna(value):
@@ -31,6 +45,15 @@ def _token(value: Any) -> str:
     text = "".join(char for char in text if not unicodedata.combining(char))
     text = text.lower().replace("đ", "d")
     return re.sub(r"[^a-z0-9]+", "_", text).strip("_")
+
+
+def canonicalize_entity_ticker(ticker: Any, firm_name: Any = None) -> str:
+    """Resolve known same-symbol entity collisions using the legal entity name."""
+    normalized_ticker = normalize_ticker(ticker)
+    normalized_name = _token(firm_name)
+    return ENTITY_TICKER_OVERRIDES.get(
+        (normalized_ticker, normalized_name), normalized_ticker
+    )
 
 
 def is_bctc_audit_annual_long(path: Path) -> bool:
@@ -133,6 +156,7 @@ def load_bctc_audit_annual_long(
     - audited rows: audit_status == audited
     - auditor rows: audit_indicator == audit_firm
     - auditor name: audit_firm_raw, with audit_value_raw as an equality check/fallback
+    - known reused-symbol entities are resolved by issuer_ticker + firm_name_raw
     """
     settings = settings or {}
     columns = list(pd.read_csv(path, nrows=0).columns)
@@ -142,7 +166,12 @@ def load_bctc_audit_annual_long(
             f"bctc_audit_annual_long schema mismatch; missing columns: {missing}"
         )
 
-    usecols = list(dict.fromkeys(REQUIRED_COLUMNS))
+    usecols = list(
+        dict.fromkeys(
+            list(REQUIRED_COLUMNS)
+            + [column for column in OPTIONAL_ENTITY_COLUMNS if column in columns]
+        )
+    )
     chunksize = int(settings.get("chunksize", 250_000))
     chunks = pd.read_csv(path, usecols=usecols, chunksize=chunksize, low_memory=False)
     frames: list[pd.DataFrame] = []
@@ -168,7 +197,15 @@ def load_bctc_audit_annual_long(
     raw["auditor_name_raw"] = raw["audit_firm_raw"].where(
         raw["audit_firm_raw"].notna(), raw["audit_value_raw"]
     )
-    raw["issuer_ticker"] = raw["issuer_ticker"].map(normalize_ticker)
+    firm_names = (
+        raw["firm_name_raw"]
+        if "firm_name_raw" in raw
+        else pd.Series(pd.NA, index=raw.index)
+    )
+    raw["issuer_ticker"] = [
+        canonicalize_entity_ticker(ticker, firm_name)
+        for ticker, firm_name in zip(raw["issuer_ticker"], firm_names, strict=True)
+    ]
     raw["fiscal_year"] = pd.to_numeric(raw["year"], errors="coerce")
     raw = raw[
         raw["issuer_ticker"].ne("")
@@ -191,6 +228,7 @@ def load_bctc_audit_annual_long(
                 "source_schema": "BCTC_AUDIT_ANNUAL_LONG_V1",
                 "ticker_column": "issuer_ticker",
                 "year_column": "year",
+                "entity_name_column": "firm_name_raw" if "firm_name_raw" in raw else "",
                 "period_type_filter": "annual",
                 "statement_scope_filter": "Hợp nhất",
                 "audit_status_filter": "audited",
