@@ -17,6 +17,18 @@ panel_contract:
     - big4_flag
     - audit_opinion_group
 
+method_contract:
+  version: results-method-contract-v1
+  jones_ordinary_intercept: false
+  jones_feature_centering: false
+  jones_scale_regressor: inv_assets
+  attribution_estimand: three_player_pat_cfo_benchmark_residual
+  attribution_players:
+    - pat
+    - cfo
+    - benchmark_residual
+  signed_shift_reassignment_cell: fiscal_year
+
 settings:
   audited_label: audited
   unaudited_label: unaudited
