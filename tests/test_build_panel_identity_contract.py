@@ -70,3 +70,74 @@ def test_missing_exchange_and_legal_name_is_blocked(tmp_path: Path) -> None:
     _write_source(source, [{"issuer_ticker": "VSM"}])
     with pytest.raises(ValueError, match="fallback columns are missing"):
         MODULE._validate_financial_source_identity(source)
+
+
+def _paired_panel() -> pd.DataFrame:
+    rows = []
+    for ticker in ("AAA", "BBB", "CCC"):
+        for year in (2023, 2024):
+            for state in ("unaudited", "audited"):
+                rows.append(
+                    {
+                        "issuer_ticker": ticker,
+                        "fiscal_year": year,
+                        "audit_status": state,
+                        "value": len(rows),
+                    }
+                )
+    return pd.DataFrame(rows)
+
+
+def test_population_lock_reapplies_exact_issuer_year_keys(tmp_path: Path) -> None:
+    keys_path = tmp_path / "population_eligible_keys.csv"
+    pd.DataFrame(
+        {
+            "issuer_ticker": ["AAA", "CCC"],
+            "fiscal_year": [2023, 2024],
+        }
+    ).to_csv(keys_path, index=False)
+
+    locked, status = MODULE._apply_population_lock(_paired_panel(), keys_path)
+
+    assert len(locked) == 4
+    assert set(map(tuple, locked[["issuer_ticker", "fiscal_year"]].drop_duplicates().to_numpy())) == {
+        ("AAA", 2023),
+        ("CCC", 2024),
+    }
+    assert status.loc[0, "eligible_issuer_years"] == 2
+    assert status.loc[0, "locked_rows"] == 4
+    assert status.loc[0, "status"] == "PASS"
+
+
+def test_population_lock_rejects_missing_locked_key(tmp_path: Path) -> None:
+    keys_path = tmp_path / "population_eligible_keys.csv"
+    pd.DataFrame(
+        {
+            "issuer_ticker": ["ZZZ"],
+            "fiscal_year": [2024],
+        }
+    ).to_csv(keys_path, index=False)
+
+    with pytest.raises(ValueError, match="absent from the rebuilt unrestricted panel"):
+        MODULE._apply_population_lock(_paired_panel(), keys_path)
+
+
+def test_population_lock_rejects_incomplete_pair(tmp_path: Path) -> None:
+    keys_path = tmp_path / "population_eligible_keys.csv"
+    pd.DataFrame(
+        {
+            "issuer_ticker": ["AAA"],
+            "fiscal_year": [2023],
+        }
+    ).to_csv(keys_path, index=False)
+    panel = _paired_panel()
+    panel = panel.loc[
+        ~(
+            panel.issuer_ticker.eq("AAA")
+            & panel.fiscal_year.eq(2023)
+            & panel.audit_status.eq("audited")
+        )
+    ].copy()
+
+    with pytest.raises(ValueError, match="exactly two reporting states"):
+        MODULE._apply_population_lock(panel, keys_path)
