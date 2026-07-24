@@ -6,6 +6,13 @@ sample:
   exclude_financial_firms: true
   unknown_industry_policy: exclude
 
+runtime:
+  # Four OOS test families plus one accrual-quality bootstrap job.
+  # Values above 5 do not add useful process-level parallelism.
+  workers: 5
+  # Resample issuer-cluster aggregates in vectorized batches inside each worker.
+  bootstrap_batch_size: 128
+
 settings:
   audited_label: audited
   unaudited_label: unaudited
