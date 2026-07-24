@@ -20,12 +20,7 @@ def _safe_ratio(numerator: pd.Series, denominator: pd.Series) -> pd.Series:
     return num.div(den.where(den.abs() > 0))
 
 
-def _winsorise(
-    frame: pd.DataFrame,
-    columns: list[str],
-    lower: float,
-    upper: float,
-) -> None:
+def _winsorise(frame: pd.DataFrame, columns: list[str], lower: float, upper: float) -> None:
     for column in columns:
         if column not in frame:
             continue
@@ -54,10 +49,7 @@ def _fully_interacted_stacked(
     return _cluster_ols(stacked_y, stacked_x, stacked_clusters)
 
 
-def _prepare_pair(
-    panel: pd.DataFrame,
-    settings: CompletionSettings,
-) -> tuple[pd.DataFrame, str | None]:
+def _prepare_pair(panel: pd.DataFrame, settings: CompletionSettings) -> tuple[pd.DataFrame, str | None]:
     pair = paired_panel(panel, settings)
     industry_col = _find_column(pair, [
         "icb_l1_pre", "industry_name_pre", "icb_industry_pre", "industry_pre",
@@ -113,6 +105,16 @@ def applied_consequence_tables(
         accrual_rows.architecture.eq("pooled")
         & accrual_rows.benchmark.eq("audited_reference")
     ].copy()
+    model_count = int(primary.model.nunique())
+    if model_count < 1:
+        raise ValueError("No pooled audited-reference applied rows")
+    common_counts = primary.groupby(KEYS, observed=True).model.nunique()
+    common_keys = common_counts.loc[common_counts.eq(model_count)].reset_index()[KEYS]
+    if common_keys.empty:
+        raise ValueError("No common issuer-year population across applied model families")
+    primary = primary.merge(
+        common_keys, on=KEYS, how="inner", validate="many_to_one"
+    )
 
     for model, group in primary.groupby("model", observed=True):
         data = group.merge(pair, on=KEYS, how="left", validate="many_to_one")
@@ -185,6 +187,7 @@ def applied_consequence_tables(
                     "difference_test_id": _unique_test_id(model, focal_name, outcome_name),
                     "n": len(sample),
                     "issuers": sample.issuer_ticker.nunique(),
+                    "common_model_population": True,
                     "pre_beta": b_pre[focal_idx],
                     "pre_se": se_pre[focal_idx],
                     "pre_p": p_pre[focal_idx],
@@ -217,6 +220,7 @@ def applied_consequence_tables(
                     "design": f"{focal_name}_{outcome_name}",
                     "status": "estimated", "rows": len(sample),
                     "stacked_state_slopes": "fully_interacted",
+                    "common_model_population": True,
                 })
 
     full = pd.DataFrame(rows)
