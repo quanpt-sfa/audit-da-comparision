@@ -38,9 +38,12 @@ method_contract:
 
 # Authoritative contract for scripts 34/35.
 final_method_contract:
-  version: final-results-contract-v2
+  version: final-results-contract-v3
   analysis_population: locked_nonfinancial_panel
   training_population: unrestricted_nonfinancial_history
+  source_start_year_role: lag_support_only
+  lag_support_years: 1
+  model_test_start_rule: training_start_plus_one
   require_training_start_year: true
   jones_ordinary_intercept: false
   jones_feature_centering: false
@@ -58,13 +61,17 @@ final_method_contract:
   applied_primary_test: paired_difference
   stacked_state_slopes: fully_interacted
   signed_da_difference_family: one_unique_test_per_focal
-  supplemental_inputs: required
+  supplemental_inputs: required_for_full_scope
 
 settings:
   audited_label: audited
   unaudited_label: unaudited
-  training_start_year: 2015
-  test_start_year: 2016
+  # 2015 supplies lagged assets and year-over-year changes only.
+  source_start_year: 2015
+  # 2016 is the first model-complete audited estimation year.
+  training_start_year: 2016
+  # 2017 is the first model-based test year; direct comparisons still retain 2016.
+  test_start_year: 2017
   test_end_year: 2025
   min_train_rows: 100
   min_industry_rows: 40
@@ -82,7 +89,7 @@ settings:
   simulation_batch_size: 32
   blas_threads_per_worker: 1
 
-# Final runner fails closed when either file is absent or empty.
+# Required only when scripts 34/35 are run with --include-supplemental.
 required_supplemental_paths:
   concentration_input: artifacts/cfs_shifting_validation/concentration_cases.csv
   near_zero_input: artifacts/cfs_shifting_validation/near_zero_randomisation.csv
