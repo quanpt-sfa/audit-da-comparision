@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import replace
+import json
 from pathlib import Path
 import sys
 
@@ -13,6 +14,7 @@ SRC_ROOT = REPO_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
+from audit_da.panel_metadata import select_analysis_sample  # noqa: E402
 from audit_da.results_completion import (  # noqa: E402
     CompletionSettings,
     applied_consequence_tables,
@@ -21,6 +23,7 @@ from audit_da.results_completion import (  # noqa: E402
     confirmatory_summary,
     direct_revision_tables,
     estimate_accrual_architectures,
+    output_hash,
     profit_gate_sensitivity,
     randomisation_benchmarks,
     sample_exclusion_manifest,
@@ -47,6 +50,7 @@ RESUME_TABLES = (
     "rq2_switch_magnitudes",
     "rq2_jaccard",
 )
+SAMPLE_CONTRACT = "analysis_sample_contract.json"
 
 
 def resolve(config_path: Path, value: str) -> Path:
@@ -91,6 +95,68 @@ def load_or_compute_checkpoint(
     return frame
 
 
+def _validate_panel_contract(panel: pd.DataFrame, config: dict) -> None:
+    required = list(config.get("panel_contract", {}).get("required_columns", []))
+    missing = [column for column in required if column not in panel.columns]
+    if missing:
+        raise ValueError(
+            "Processed panel is not enriched for the locked Chapter 4 run. "
+            f"Missing columns: {missing}. Rebuild it with scripts/01_build_panel.py."
+        )
+    for column in ("icb_l1", "financial_flag"):
+        if column in required and panel[column].isna().all():
+            raise ValueError(f"Required panel column is entirely missing: {column}")
+
+
+def _analysis_contract(
+    master_panel: pd.DataFrame,
+    analysis_panel: pd.DataFrame,
+    sample_manifest: pd.DataFrame,
+) -> dict[str, object]:
+    key_columns = [
+        column
+        for column in ("issuer_ticker", "fiscal_year", "audit_status")
+        if column in analysis_panel
+    ]
+    return {
+        "master_rows": len(master_panel),
+        "analysis_rows": len(analysis_panel),
+        "master_issuer_years": master_panel[["issuer_ticker", "fiscal_year"]]
+        .drop_duplicates()
+        .shape[0],
+        "analysis_issuer_years": analysis_panel[["issuer_ticker", "fiscal_year"]]
+        .drop_duplicates()
+        .shape[0],
+        "analysis_key_sha256": output_hash(analysis_panel[key_columns]),
+        "sample_manifest": sample_manifest.to_dict(orient="records"),
+    }
+
+
+def _write_or_validate_analysis_contract(
+    output_dir: Path,
+    contract: dict[str, object],
+    resume: bool,
+) -> None:
+    path = output_dir / SAMPLE_CONTRACT
+    if resume:
+        if not path.exists():
+            raise FileNotFoundError(
+                "Cannot resume old checkpoints because the nonfinancial analysis-sample "
+                f"contract is missing: {path}. Run without --resume."
+            )
+        existing = json.loads(path.read_text(encoding="utf-8"))
+        if existing != contract:
+            raise ValueError(
+                "Resume checkpoints were produced from a different analysis sample. "
+                "Delete artifacts/manuscript_results or run without --resume."
+            )
+        stage("validated nonfinancial analysis-sample contract")
+    else:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(contract, indent=2), encoding="utf-8")
+        stage(f"wrote nonfinancial analysis-sample contract: {path}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Complete manuscript Results outputs required by the locked research design"
@@ -131,9 +197,21 @@ def main() -> None:
     panel_path = resolve(config_path, config["paths"]["panel_input"])
     output_dir = resolve(config_path, config["paths"]["output_dir"])
 
-    stage(f"loading panel: {panel_path}")
-    panel = pd.read_csv(panel_path)
-    stage(f"panel loaded ({len(panel):,} rows)")
+    stage(f"loading master panel: {panel_path}")
+    master_panel = pd.read_csv(panel_path)
+    stage(f"master panel loaded ({len(master_panel):,} rows)")
+    _validate_panel_contract(master_panel, config)
+    panel, financial_exclusion_manifest = select_analysis_sample(
+        master_panel, config.get("sample", {})
+    )
+    excluded_rows = len(master_panel) - len(panel)
+    stage(
+        f"nonfinancial analysis panel selected ({len(panel):,} rows; "
+        f"{excluded_rows:,} rows excluded)"
+    )
+    contract = _analysis_contract(master_panel, panel, financial_exclusion_manifest)
+    _write_or_validate_analysis_contract(output_dir, contract, args.resume)
+
     stage(
         f"parallel settings: workers={settings.parallel_workers or 'auto'}, "
         f"batch_size={settings.simulation_batch_size}, "
@@ -154,17 +232,13 @@ def main() -> None:
                 panel,
                 settings,
                 models=config["models"],
-                industry_column=config.get("columns", {}).get(
-                    "industry", "icb_industry"
-                ),
+                industry_column=config.get("columns", {}).get("industry", "icb_l1"),
             )
         else:
             accrual, estimation_manifest = estimate_accrual_architectures(
                 panel,
                 settings,
-                industry_column=config.get("columns", {}).get(
-                    "industry", "icb_industry"
-                ),
+                industry_column=config.get("columns", {}).get("industry", "icb_l1"),
             )
         stage(f"accrual architectures complete ({len(accrual):,} rows)")
 
@@ -209,8 +283,9 @@ def main() -> None:
         ),
     )
 
-    tables["sample_exclusion_manifest"] = sample_exclusion_manifest(
-        panel, accrual, settings
+    analysis_manifest = sample_exclusion_manifest(panel, accrual, settings)
+    tables["sample_exclusion_manifest"] = pd.concat(
+        [financial_exclusion_manifest, analysis_manifest], ignore_index=True, sort=False
     )
 
     stage("running vectorized RQ1 time-shift donor benchmarks")
@@ -271,6 +346,10 @@ def main() -> None:
             "parallel_workers": settings.parallel_workers,
             "simulation_batch_size": settings.simulation_batch_size,
             "blas_threads_per_worker": settings.blas_threads_per_worker,
+            "master_panel_rows": len(master_panel),
+            "analysis_panel_rows": len(panel),
+            "financial_rows_excluded": excluded_rows,
+            "analysis_key_sha256": contract["analysis_key_sha256"],
             "resumed": args.resume,
         },
     )
