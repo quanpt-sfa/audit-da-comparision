@@ -6,7 +6,7 @@ from typing import Any, Mapping
 
 
 LOCKED_FINAL_CONTRACT: dict[str, Any] = {
-    "version": "final-results-contract-v3",
+    "version": "final-results-contract-v4",
     "analysis_population": "locked_nonfinancial_panel",
     "training_population": "unrestricted_nonfinancial_history",
     "source_start_year_role": "lag_support_only",
@@ -25,7 +25,7 @@ LOCKED_FINAL_CONTRACT: dict[str, Any] = {
     "applied_primary_test": "paired_difference",
     "stacked_state_slopes": "fully_interacted",
     "signed_da_difference_family": "one_unique_test_per_focal",
-    "supplemental_inputs": "required_for_full_scope",
+    "supplemental_scope": "separate_reproducible_runner",
 }
 
 
@@ -47,6 +47,9 @@ def validate_final_contract(config: Mapping[str, Any]) -> dict[str, Any]:
 
 def final_contract_sha256(contract: Mapping[str, Any]) -> str:
     payload = json.dumps(
-        dict(contract), sort_keys=True, separators=(",", ":"), ensure_ascii=True
+        dict(contract),
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
     ).encode("utf-8")
     return hashlib.sha256(payload).hexdigest()
