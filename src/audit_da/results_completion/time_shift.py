@@ -37,17 +37,23 @@ def _donor_indices(
     rng: np.random.Generator,
     design: str,
 ) -> np.ndarray:
-    donors = np.broadcast_to(np.arange(n_rows, dtype=np.int64), (batch_size, n_rows)).copy()
+    donors = np.broadcast_to(
+        np.arange(n_rows, dtype=np.int64), (batch_size, n_rows)
+    ).copy()
     for indices in groups:
         size = len(indices)
         if size < 2:
             continue
         positions = np.arange(size, dtype=np.int64)[None, :]
         if design == "cyclic_within_issuer":
-            offsets = rng.integers(1, size, size=(batch_size, 1), dtype=np.int64)
+            offsets = rng.integers(
+                1, size, size=(batch_size, 1), dtype=np.int64
+            )
             local = (positions - offsets) % size
         else:
-            offsets = rng.integers(1, size, size=(batch_size, size), dtype=np.int64)
+            offsets = rng.integers(
+                1, size, size=(batch_size, size), dtype=np.int64
+            )
             local = (positions + offsets) % size
         donors[:, indices] = indices[local]
     return donors
@@ -66,23 +72,33 @@ def _vectorized_shapley_contrast(
     if cfo_moves.shape != (draw_count, row_count):
         raise ValueError("PAT and CFO movement matrices must share shape")
 
-    base = np.broadcast_to(np.asarray(da_pre, dtype=float), (draw_count, row_count))
+    base = np.broadcast_to(
+        np.asarray(da_pre, dtype=float), (draw_count, row_count)
+    )
     benchmark = np.broadcast_to(
         np.asarray(benchmark_move, dtype=float), (draw_count, row_count)
     )
     moves = (pat_moves, cfo_moves, benchmark)
-    contributions = [np.zeros_like(pat_moves), np.zeros_like(pat_moves), np.zeros_like(pat_moves)]
+    contributions = [
+        np.zeros_like(pat_moves),
+        np.zeros_like(pat_moves),
+        np.zeros_like(pat_moves),
+    ]
 
     for order in permutations(range(3)):
         current = base
         current_abs = np.abs(current)
         for component in order:
             next_state = current + moves[component]
-            contributions[component] += (current_abs - np.abs(next_state)) / 6.0
+            contributions[component] += (
+                current_abs - np.abs(next_state)
+            ) / 6.0
             current = next_state
             current_abs = np.abs(current)
 
-    return np.median(np.abs(contributions[1]) - np.abs(contributions[0]), axis=1)
+    return np.median(
+        np.abs(contributions[1]) - np.abs(contributions[0]), axis=1
+    )
 
 
 def _simulate_time_shift_task(task: dict) -> dict:
@@ -101,7 +117,9 @@ def _simulate_time_shift_task(task: dict) -> dict:
     for start in range(0, draws, batch_size):
         stop = min(draws, start + batch_size)
         current_batch = stop - start
-        donors = _donor_indices(groups, len(da_pre), current_batch, rng, design)
+        donors = _donor_indices(
+            groups, len(da_pre), current_batch, rng, design
+        )
         simulated[start:stop] = _vectorized_shapley_contrast(
             da_pre,
             pat_move[donors],
@@ -121,7 +139,9 @@ def _simulate_time_shift_task(task: dict) -> dict:
         "sim_median": float(np.median(simulated)),
         "sim_p025": float(np.quantile(simulated, 0.025)),
         "sim_p975": float(np.quantile(simulated, 0.975)),
-        "observed_minus_sim_median": float(observed - np.median(simulated)),
+        "observed_minus_sim_median": float(
+            observed - np.median(simulated)
+        ),
         "mc_p": _mc_p(observed, simulated),
         "draws": draws,
         "seed": int(task["seed"]),
@@ -136,19 +156,31 @@ def _time_shift_tasks(
     pair = paired_panel(panel, settings)
     industry_candidates = [
         column
-        for column in ("icb_industry_pre", "industry_pre", "raw_exchange_pre")
+        for column in (
+            "icb_l1_pre",
+            "industry_name_pre",
+            "icb_industry_pre",
+            "industry_pre",
+            "raw_exchange_pre",
+        )
         if column in pair
     ]
     industry_col = industry_candidates[0] if industry_candidates else None
     extra = KEYS + ([industry_col] if industry_col else [])
-    base = cases.merge(pair[extra], on=KEYS, how="left", validate="many_to_one")
+    base = cases.merge(
+        pair[extra], on=KEYS, how="left", validate="many_to_one"
+    )
     tasks: list[dict] = []
 
-    grouped = base.groupby(["model", "architecture", "benchmark"], observed=True)
+    grouped = base.groupby(
+        ["model", "architecture", "benchmark"], observed=True
+    )
     for (model, architecture, benchmark), group0 in grouped:
         if architecture != "pooled":
             continue
-        group = group0.sort_values(KEYS, kind="mergesort").reset_index(drop=True)
+        group = group0.sort_values(KEYS, kind="mergesort").reset_index(
+            drop=True
+        )
         eligible_counts = group.groupby("issuer_ticker").fiscal_year.nunique()
         eligible = eligible_counts.index[eligible_counts >= 2]
         group = group[group.issuer_ticker.isin(eligible)].reset_index(drop=True)
@@ -158,7 +190,9 @@ def _time_shift_tasks(
         issuer_codes, _ = pd.factorize(group.issuer_ticker, sort=True)
         issuer_groups = _group_indices(issuer_codes)
         if industry_col:
-            peer_key = pd.MultiIndex.from_frame(group[["fiscal_year", industry_col]])
+            peer_key = pd.MultiIndex.from_frame(
+                group[["fiscal_year", industry_col]]
+            )
             peer_codes, _ = pd.factorize(peer_key, sort=True)
         else:
             peer_codes, _ = pd.factorize(group.fiscal_year, sort=True)
@@ -182,7 +216,11 @@ def _time_shift_tasks(
                 {
                     **common,
                     "donor_design": donor_design,
-                    "groups": issuer_groups if donor_design != "same_year_peer" else peer_groups,
+                    "groups": (
+                        issuer_groups
+                        if donor_design != "same_year_peer"
+                        else peer_groups
+                    ),
                     "seed": stable_task_seed(
                         settings.seed + 101,
                         model,
@@ -207,11 +245,14 @@ def time_shift_benchmarks(
     if not tasks:
         return pd.DataFrame()
 
-    worker_count = resolve_parallel_workers(settings.parallel_workers, len(tasks))
+    worker_count = resolve_parallel_workers(
+        settings.parallel_workers, len(tasks)
+    )
     configure_worker_environment(settings.blas_threads_per_worker)
     if progress:
         progress(
-            f"time-shift: {len(tasks)} tasks, {settings.simulation_draws:,} draws each, "
+            f"time-shift: {len(tasks)} tasks, "
+            f"{settings.simulation_draws:,} draws each, "
             f"{worker_count} process workers"
         )
 
@@ -223,17 +264,26 @@ def time_shift_benchmarks(
                 progress(f"time-shift task {index}/{len(tasks)} complete")
     else:
         context = get_context("spawn")
-        with ProcessPoolExecutor(max_workers=worker_count, mp_context=context) as executor:
-            futures = {executor.submit(_simulate_time_shift_task, task): task for task in tasks}
-            for index, future in enumerate(as_completed(futures), start=1):
+        with ProcessPoolExecutor(
+            max_workers=worker_count, mp_context=context
+        ) as executor:
+            futures = {
+                executor.submit(_simulate_time_shift_task, task): task
+                for task in tasks
+            }
+            for index, future in enumerate(
+                as_completed(futures), start=1
+            ):
                 rows.append(future.result())
                 if progress:
                     task = futures[future]
                     progress(
                         f"time-shift task {index}/{len(tasks)} complete: "
-                        f"{task['model']}/{task['benchmark']}/{task['donor_design']}"
+                        f"{task['model']}/{task['benchmark']}/"
+                        f"{task['donor_design']}"
                     )
 
     return pd.DataFrame(rows).sort_values(
-        ["model", "architecture", "benchmark", "donor_design"], kind="mergesort"
+        ["model", "architecture", "benchmark", "donor_design"],
+        kind="mergesort",
     ).reset_index(drop=True)
