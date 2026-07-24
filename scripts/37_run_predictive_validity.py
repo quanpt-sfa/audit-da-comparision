@@ -61,8 +61,8 @@ def main() -> None:
         type=int,
         default=None,
         help=(
-            "Parallel bootstrap workers. The workflow has five independent bootstrap "
-            "jobs, so values above 5 do not add useful parallelism."
+            "Parallel bootstrap workers. Four OOS families run concurrently; the AQ "
+            "bootstrap is vectorized separately. Values above 4 add no benefit."
         ),
     )
     parser.add_argument(
@@ -94,7 +94,7 @@ def main() -> None:
         int(
             args.workers
             if args.workers is not None
-            else runtime.get("workers", 5)
+            else runtime.get("workers", 4)
         ),
     )
     bootstrap_batch_size = max(
@@ -141,7 +141,7 @@ def main() -> None:
     )
     stage(
         "runtime: "
-        f"bootstrap_workers={min(workers, 5)}, "
+        f"bootstrap_workers_max={min(workers, 4)}, "
         f"bootstrap_draws={settings.bootstrap_draws:,}, "
         f"batch_size={bootstrap_batch_size}"
     )
@@ -184,7 +184,7 @@ def main() -> None:
         "settings": settings.__dict__,
         "runtime": {
             "workers_requested": workers,
-            "bootstrap_workers_effective": min(workers, 5),
+            "bootstrap_workers_max": min(workers, 4),
             "bootstrap_batch_size": bootstrap_batch_size,
         },
         "sample_selection": sample_manifest.to_dict(orient="records"),
