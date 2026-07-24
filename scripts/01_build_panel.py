@@ -5,6 +5,8 @@ import argparse
 import sys
 from pathlib import Path
 
+import pandas as pd
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SRC_ROOT = REPO_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
@@ -16,11 +18,31 @@ from audit_da.panel import build_and_save_panel
 from audit_da.panel_metadata import enrich_panel_metadata
 
 
-def _optional_path(config_path: str, config: dict, key: str, override: str | None) -> Path | None:
+def _optional_path(
+    config_path: str,
+    config: dict,
+    key: str,
+    override: str | None,
+) -> Path | None:
     if override:
         return Path(override).resolve()
     value = config.get("paths", {}).get(key)
     return resolve_path(config_path, value) if value else None
+
+
+def _validate_financial_source_identity(path: Path) -> None:
+    columns = set(
+        pd.read_csv(
+            path,
+            compression="gzip" if str(path).endswith(".gz") else "infer",
+            nrows=0,
+        ).columns
+    )
+    if "firm_name_raw" not in columns:
+        raise ValueError(
+            "The financial-statement source must contain firm_name_raw so reused "
+            "VSM/VTS symbols can be resolved before the firm-year pivot."
+        )
 
 
 def main() -> None:
@@ -39,16 +61,27 @@ def main() -> None:
         if args.input
         else resolve_path(args.config, config["paths"]["input"])
     )
-    local = materialize_csv_gz(input_path, resolve_path(args.config, "data/raw"))
+    local = materialize_csv_gz(
+        input_path, resolve_path(args.config, "data/raw")
+    )
+    _validate_financial_source_identity(local)
+
     output = resolve_path(args.config, config["paths"]["processed_panel"])
-    industry_path = _optional_path(args.config, config, "industry_input", args.industry)
+    industry_path = _optional_path(
+        args.config, config, "industry_input", args.industry
+    )
     audit_path = _optional_path(
         args.config, config, "audit_metadata_input", args.audit_metadata
     )
 
-    for label, path in (("industry", industry_path), ("audit metadata", audit_path)):
+    for label, path in (
+        ("industry", industry_path),
+        ("audit metadata", audit_path),
+    ):
         if path is not None and not path.exists():
-            raise FileNotFoundError(f"Configured {label} file does not exist: {path}")
+            raise FileNotFoundError(
+                f"Configured {label} file does not exist: {path}"
+            )
 
     panel = build_and_save_panel(local, output, config)
     panel, statuses = enrich_panel_metadata(
