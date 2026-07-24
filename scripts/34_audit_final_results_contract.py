@@ -94,7 +94,52 @@ def _runtime_checks() -> dict[str, object]:
     return checks
 
 
-def _audit_inputs(config_path: Path, config: dict) -> dict[str, object]:
+def _audit_supplemental_inputs(
+    config_path: Path,
+    config: dict,
+    *,
+    required: bool,
+) -> dict[str, object]:
+    configured = config.get("required_supplemental_paths", {})
+    result: dict[str, object] = {
+        "required": required,
+        "status": "PASS" if required else "NOT_REQUIRED_FOR_CORE",
+        "paths": {},
+    }
+    for key in ("concentration_input", "near_zero_input"):
+        value = configured.get(key)
+        if value is None:
+            if required:
+                raise ValueError(f"Required supplemental path not configured: {key}")
+            result["paths"][key] = {
+                "configured": False,
+                "exists": False,
+            }
+            continue
+        path = resolve(config_path, value)
+        exists = path.exists()
+        nonempty = bool(exists and path.stat().st_size > 0)
+        result["paths"][key] = {
+            "configured": True,
+            "path": str(path),
+            "exists": exists,
+            "nonempty": nonempty,
+        }
+        if required and not exists:
+            raise FileNotFoundError(
+                f"Required supplemental input missing: {key}={path}"
+            )
+        if required and not nonempty:
+            raise ValueError(f"Required supplemental input empty: {key}={path}")
+    return result
+
+
+def _audit_inputs(
+    config_path: Path,
+    config: dict,
+    *,
+    require_supplemental: bool,
+) -> dict[str, object]:
     paths = config["paths"]
     analysis_path = resolve(config_path, paths["analysis_panel_input"])
     training_path = resolve(config_path, paths["training_panel_input"])
@@ -114,27 +159,24 @@ def _audit_inputs(config_path: Path, config: dict) -> dict[str, object]:
         raise ValueError(
             f"Training panel has no audited estimation history for {start_year}"
         )
-    required = config.get("required_supplemental_paths", {})
-    supplemental: dict[str, object] = {}
-    for key in ("concentration_input", "near_zero_input"):
-        if key not in required:
-            raise ValueError(f"Required supplemental path not configured: {key}")
-        path = resolve(config_path, required[key])
-        if not path.exists():
-            raise FileNotFoundError(f"Required supplemental input missing: {key}={path}")
-        if path.stat().st_size <= 0:
-            raise ValueError(f"Required supplemental input empty: {key}={path}")
-        supplemental[key] = str(path)
     return {
         "analysis_panel": str(analysis_path),
         "training_panel": str(training_path),
         "training_start_year": start_year,
         "training_start_audited_rows": int(len(start_rows)),
-        "supplemental": supplemental,
+        "supplemental": _audit_supplemental_inputs(
+            config_path,
+            config,
+            required=require_supplemental,
+        ),
     }
 
 
-def _audit_outputs(output_dir: Path) -> dict[str, object]:
+def _audit_outputs(
+    output_dir: Path,
+    *,
+    require_supplemental: bool,
+) -> dict[str, object]:
     required_files = {
         "accrual_estimation_manifest.csv",
         "rq1_attribution_cases.csv",
@@ -143,9 +185,10 @@ def _audit_outputs(output_dir: Path) -> dict[str, object]:
         "rq2_randomisation.csv",
         "applied_consequence_full.csv",
         "applied_consequence_unique_tests.csv",
-        "supplemental_inference.csv",
         "confirmatory_family_summary.csv",
     }
+    if require_supplemental:
+        required_files.add("supplemental_inference.csv")
     missing = sorted(
         name for name in required_files if not (output_dir / name).exists()
     )
@@ -208,35 +251,54 @@ def _audit_outputs(output_dir: Path) -> dict[str, object]:
     if len(signed_unique) != 3:
         raise ValueError("Expected one signed-DA test per focal variable")
 
-    supplemental = pd.read_csv(output_dir / "supplemental_inference.csv")
-    if supplemental.empty:
+    supplemental_rows = 0
+    supplemental_path = output_dir / "supplemental_inference.csv"
+    if supplemental_path.exists():
+        supplemental = pd.read_csv(supplemental_path)
+        supplemental_rows = int(len(supplemental))
+    if require_supplemental and supplemental_rows == 0:
         raise ValueError("Supplemental inference empty")
+
     return {
         "output_dir": str(output_dir),
+        "scope": "core_plus_supplemental" if require_supplemental else "core",
         "estimated_architectures": int(len(estimated)),
         "attribution_rows": int(len(attribution)),
         "direct_switching_rows": int(len(direct)),
         "unique_applied_tests": int(len(unique)),
-        "supplemental_rows": int(len(supplemental)),
+        "supplemental_rows": supplemental_rows,
         "max_shapley_error": float(efficiency.max()),
         "max_applied_alignment_error": float(applied.estimand_alignment_error.max()),
     }
 
 
-def run_audit(config_path: Path, check_outputs: bool = True) -> dict[str, object]:
+def run_audit(
+    config_path: Path,
+    check_outputs: bool = True,
+    require_supplemental: bool = False,
+) -> dict[str, object]:
     config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
     contract = validate_final_contract(config)
     output_dir = resolve(config_path, config["paths"]["final_output_dir"])
     result = {
         "status": "PASS",
+        "scope": "core_plus_supplemental" if require_supplemental else "core",
         "contract": contract,
         "contract_sha256": final_contract_sha256(contract),
         "runtime_checks": _runtime_checks(),
-        "inputs": _audit_inputs(config_path, config),
-        "outputs": _audit_outputs(output_dir) if check_outputs else {"status": "SKIPPED"},
+        "inputs": _audit_inputs(
+            config_path,
+            config,
+            require_supplemental=require_supplemental,
+        ),
+        "outputs": _audit_outputs(
+            output_dir,
+            require_supplemental=require_supplemental,
+        ) if check_outputs else {"status": "SKIPPED"},
     }
     output_dir.mkdir(parents=True, exist_ok=True)
-    audit_path = output_dir / "final_results_audit.json"
+    suffix = "full" if require_supplemental else "core"
+    audit_path = output_dir / f"final_results_audit_{suffix}.json"
     audit_path.write_text(json.dumps(result, indent=2), encoding="utf-8")
     result["audit_path"] = str(audit_path)
     return result
@@ -246,10 +308,19 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Audit the final Results contract")
     parser.add_argument("--config", default="config/results_completion.yaml")
     parser.add_argument("--skip-existing-outputs", action="store_true")
+    parser.add_argument(
+        "--include-supplemental",
+        action="store_true",
+        help=(
+            "Also require and audit line-item concentration and near-zero-CFO "
+            "supplemental inputs/outputs. Core audit does not require raw CFS data."
+        ),
+    )
     args = parser.parse_args()
     result = run_audit(
         Path(args.config).resolve(),
         check_outputs=not args.skip_existing_outputs,
+        require_supplemental=args.include_supplemental,
     )
     print(json.dumps(result, indent=2))
 
