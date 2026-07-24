@@ -1,8 +1,14 @@
 # Manuscript Results completion workflow
 
-The Chapter 4 workflow now has two mandatory stages: rebuild an enriched master panel, then run the nonfinancial analysis sample. The panel retains excluded firms for auditability but the Results runner removes financial firms before every accrual, Shapley, switching, randomisation, time-shift, and applied-consequence calculation.
+The Chapter 4 workflow has three mandatory layers:
 
-## Required raw inputs
+1. rebuild and enrich the unrestricted paired panel;
+2. reapply the previously locked issuer-year population;
+3. select the nonfinancial Chapter 4 analysis sample.
+
+This separation prevents metadata enrichment from silently changing the population contract. The unrestricted panel is retained for auditability, while the locked panel preserves the exact issuer-year keys established by the earlier population-lock stage.
+
+## Required inputs
 
 Place the files at the configured paths:
 
@@ -10,6 +16,7 @@ Place the files at the configured paths:
 data/raw/financial_statement_full_long.csv.gz
 data/raw/bctc_industry_icb.csv
 data/raw/bctc_audit_annual_long.csv
+artifacts/population_lock/population_eligible_keys.csv
 ```
 
 The audit file supplies both `audit_firm` and `audit_opinion` rows. Known reused symbols are canonicalised by legal entity name:
@@ -19,14 +26,25 @@ The audit file supplies both `audit_firm` and `audit_opinion` rows. Known reused
 - Gạch Ngói Từ Sơn remains `VTS`;
 - Chứng khoán Việt Thành becomes `VTSC`.
 
-## Rebuild the enriched master panel
+If the financial-statement source has no legal-name field, VSM and VTS are accepted only when every remaining row is associated with a recognised listed exchange. OTC or unresolved rows block the build.
+
+## Rebuild enriched unrestricted and locked panels
 
 ```powershell
 python .\scripts\01_build_panel.py `
   --config .\config\signal_gate.yaml
 ```
 
-The resulting `data/processed/accrual_panel.csv.gz` must contain at least:
+The script writes two files:
+
+```text
+data/processed/accrual_panel_unrestricted.csv.gz
+data/processed/accrual_panel.csv.gz
+```
+
+`accrual_panel_unrestricted.csv.gz` contains every paired issuer-year available from the financial-statement extraction, enriched with ICB and audit metadata. `accrual_panel.csv.gz` contains only the issuer-year keys in `population_eligible_keys.csv`. Every locked issuer-year must have exactly two reporting-state rows.
+
+The locked file must contain at least:
 
 ```text
 icb_l1
@@ -38,7 +56,7 @@ analysis_eligible
 exclusion_reason
 ```
 
-Financial firms remain in this master file with `exclusion_reason=financial_firm`. The Chapter 4 runner enforces the nonfinancial restriction and refuses to use an unenriched panel.
+Financial firms remain observable in the unrestricted panel. The population lock and the Chapter 4 runner record any financial and unknown-industry exclusions explicitly.
 
 ## Parallel configuration
 
@@ -52,7 +70,7 @@ Limiting BLAS to one thread per process prevents each worker from spawning its o
 
 ## Full Chapter 4 run
 
-Delete legacy outputs because they predate the nonfinancial sample contract:
+Delete legacy outputs because they predate the corrected panel and sample contracts:
 
 ```powershell
 Remove-Item .\artifacts\manuscript_results -Recurse -Force -ErrorAction SilentlyContinue
@@ -68,7 +86,7 @@ python .\scripts\31_complete_manuscript_results.py `
   --simulation-batch-size 32
 ```
 
-The runner writes `analysis_sample_contract.json` before estimation. It records the master-panel size, nonfinancial analysis size, exclusions, and a deterministic hash of the selected issuer-year-state keys.
+The runner writes `analysis_sample_contract.json` before estimation. It records the locked-panel size, nonfinancial analysis size, exclusions, and a deterministic hash of the selected issuer-year-state keys.
 
 ## Resume from compatible checkpoints
 
