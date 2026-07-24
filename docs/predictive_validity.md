@@ -110,6 +110,15 @@ python .\scripts\37_run_predictive_validity.py `
   --bootstrap-draws 50
 ```
 
+Generate the decision-oriented Markdown report after the CSV bundle is complete:
+
+```powershell
+python .\scripts\38_write_predictive_validity_report.py `
+  --config .\config\predictive_validity.yaml
+```
+
+The report uses OOS RMSE and MAE as the primary decision criteria. `SUPPORTS_AUDITED` or `SUPPORTS_PRE` requires both loss measures to point in the same direction and both 95% issuer-cluster bootstrap intervals to exclude zero. Directional and mixed cases remain explicitly labelled.
+
 ## Outputs
 
 The runner writes to `artifacts/predictive_validity/`:
@@ -127,9 +136,10 @@ The runner writes to `artifacts/predictive_validity/`:
 - `accrual_quality_crossfit_cases.csv`;
 - `accrual_quality_summary.csv`;
 - `accrual_quality_state_differences.csv`;
-- `predictive_validity_manifest.json`.
+- `predictive_validity_manifest.json`;
+- `predictive_validity_report.md` after script `38` is run.
 
-The manifest records the analysis population hash, settings, sample exclusions, row counts and deterministic hashes of every table.
+The manifest records the analysis population hash, settings, sample exclusions, row counts and deterministic hashes of every CSV table.
 
 ## Tests
 
