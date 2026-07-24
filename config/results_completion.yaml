@@ -36,9 +36,9 @@ method_contract:
     - benchmark_residual
   signed_shift_reassignment_cell: fiscal_year
 
-# Authoritative contract for scripts 34/35.
+# Authoritative core contract for scripts 34/35.
 final_method_contract:
-  version: final-results-contract-v3
+  version: final-results-contract-v4
   analysis_population: locked_nonfinancial_panel
   training_population: unrestricted_nonfinancial_history
   source_start_year_role: lag_support_only
@@ -61,7 +61,7 @@ final_method_contract:
   applied_primary_test: paired_difference
   stacked_state_slopes: fully_interacted
   signed_da_difference_family: one_unique_test_per_focal
-  supplemental_inputs: required_for_full_scope
+  supplemental_scope: separate_reproducible_runner
 
 settings:
   audited_label: audited
@@ -88,13 +88,3 @@ settings:
   parallel_workers: 31
   simulation_batch_size: 32
   blas_threads_per_worker: 1
-
-# Required only when scripts 34/35 are run with --include-supplemental.
-required_supplemental_paths:
-  concentration_input: artifacts/cfs_shifting_validation/concentration_cases.csv
-  near_zero_input: artifacts/cfs_shifting_validation/near_zero_randomisation.csv
-
-# Legacy optional paths retained for scripts/31_complete_manuscript_results.py.
-optional_paths:
-  concentration_input: artifacts/cfs_shifting_validation/concentration_cases.csv
-  near_zero_input: artifacts/cfs_shifting_validation/near_zero_randomisation.csv
