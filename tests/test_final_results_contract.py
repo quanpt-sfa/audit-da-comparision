@@ -113,7 +113,7 @@ def test_separate_history_and_raw_current_outcome() -> None:
         & accrual.benchmark.eq("audited_reference")
     ].iloc[0]
     assert audited_reference.train_min_year == 2015
-    assert audited_reference.current_outcome_clipped is False
+    assert not bool(audited_reference.current_outcome_clipped)
     assert np.isclose(audited_reference.signed_shift, -200.0)
 
     attribution = build_attribution_cases(
