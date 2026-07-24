@@ -17,9 +17,9 @@ if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 from audit_da.panel_metadata import select_analysis_sample  # noqa: E402
-from audit_da.predictive_validity import (  # noqa: E402
-    PredictiveValiditySettings,
-    run_predictive_validity,
+from audit_da.predictive_validity import PredictiveValiditySettings  # noqa: E402
+from audit_da.predictive_validity_parallel import (  # noqa: E402
+    run_predictive_validity_parallel,
 )
 from audit_da.results_completion.core import output_hash  # noqa: E402
 
@@ -57,6 +57,21 @@ def main() -> None:
         help="Override issuer-cluster bootstrap draws, mainly for smoke tests.",
     )
     parser.add_argument(
+        "--workers",
+        type=int,
+        default=None,
+        help=(
+            "Parallel bootstrap workers. The workflow has five independent bootstrap "
+            "jobs, so values above 5 do not add useful parallelism."
+        ),
+    )
+    parser.add_argument(
+        "--bootstrap-batch-size",
+        type=int,
+        default=None,
+        help="Vectorized cluster-resampling draws per worker batch.",
+    )
+    parser.add_argument(
         "--minimum-train-rows",
         type=int,
         default=None,
@@ -73,6 +88,23 @@ def main() -> None:
     config_path = Path(args.config).resolve()
     config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
     settings = PredictiveValiditySettings(**config.get("settings", {}))
+    runtime = dict(config.get("runtime", {}))
+    workers = max(
+        1,
+        int(
+            args.workers
+            if args.workers is not None
+            else runtime.get("workers", 5)
+        ),
+    )
+    bootstrap_batch_size = max(
+        1,
+        int(
+            args.bootstrap_batch_size
+            if args.bootstrap_batch_size is not None
+            else runtime.get("bootstrap_batch_size", 128)
+        ),
+    )
     if args.bootstrap_draws is not None:
         settings = replace(settings, bootstrap_draws=max(1, args.bootstrap_draws))
     if args.minimum_train_rows is not None:
@@ -107,8 +139,20 @@ def main() -> None:
         f"selected nonfinancial sample: {len(panel):,} rows, "
         f"{panel[['issuer_ticker', 'fiscal_year']].drop_duplicates().shape[0]:,} firm-years"
     )
+    stage(
+        "runtime: "
+        f"bootstrap_workers={min(workers, 5)}, "
+        f"bootstrap_draws={settings.bootstrap_draws:,}, "
+        f"batch_size={bootstrap_batch_size}"
+    )
 
-    tables = run_predictive_validity(panel, settings)
+    tables = run_predictive_validity_parallel(
+        panel,
+        settings,
+        workers=workers,
+        bootstrap_batch_size=bootstrap_batch_size,
+        progress=stage,
+    )
     required_nonempty = [
         "predictive_validity_cases",
         "predictive_validity_coefficients",
@@ -138,6 +182,11 @@ def main() -> None:
             panel[["issuer_ticker", "fiscal_year", "audit_status"]]
         ),
         "settings": settings.__dict__,
+        "runtime": {
+            "workers_requested": workers,
+            "bootstrap_workers_effective": min(workers, 5),
+            "bootstrap_batch_size": bootstrap_batch_size,
+        },
         "sample_selection": sample_manifest.to_dict(orient="records"),
         "outputs": {},
     }
