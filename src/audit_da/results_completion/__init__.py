@@ -21,6 +21,8 @@ from .method_contract import (
 from .switching import (
     _midrank_against_reference,
     direct_revision_tables,
+)
+from .switching_complete_case import (
     profit_gate_sensitivity,
     switching_cases,
 )
