@@ -48,8 +48,7 @@ def _token(value: Any) -> str:
 
 
 def _choose(columns: Iterable[str], candidates: Iterable[str]) -> str | None:
-    available = list(columns)
-    normalized = {_token(column): column for column in available}
+    normalized = {_token(column): column for column in columns}
     for candidate in candidates:
         hit = normalized.get(_token(candidate))
         if hit is not None:
@@ -63,11 +62,21 @@ def _first_known(series: pd.Series):
 
 
 def _classify_financial(industry: pd.Series) -> pd.Series:
-    token = industry.map(_token)
+    tokens = industry.map(_token)
     pattern = re.compile(
         r"(^|_)(tai_chinh|ngan_hang|bao_hiem|chung_khoan|financial|bank|insurance|securit)(_|$)"
     )
-    return token.map(lambda value: bool(pattern.search(value)) if value else pd.NA).astype("boolean")
+    return tokens.map(
+        lambda value: bool(pattern.search(value)) if value else pd.NA
+    ).astype("boolean")
+
+
+def _boolean_masks(series: pd.Series) -> tuple[pd.Series, pd.Series, pd.Series]:
+    values = series.astype("boolean")
+    is_financial = values.eq(True).fillna(False).astype(bool)
+    is_nonfinancial = values.eq(False).fillna(False).astype(bool)
+    is_unknown = values.isna().astype(bool)
+    return is_financial, is_nonfinancial, is_unknown
 
 
 def load_industry_metadata(path: str | Path) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -75,7 +84,9 @@ def load_industry_metadata(path: str | Path) -> tuple[pd.DataFrame, pd.DataFrame
     raw = pd.read_csv(path, low_memory=False)
     ticker_col = _choose(raw.columns, ["issuer_ticker", "ticker", "stock_code", "ma_ck"])
     year_col = _choose(raw.columns, ["fiscal_year", "year", "report_year", "nam"])
-    firm_col = _choose(raw.columns, ["firm_name_raw", "firm_name", "company_name", "ten_cong_ty"])
+    firm_col = _choose(
+        raw.columns, ["firm_name_raw", "firm_name", "company_name", "ten_cong_ty"]
+    )
     if ticker_col is None:
         raise ValueError(f"Industry metadata has no ticker column: {list(raw.columns)}")
 
@@ -112,35 +123,49 @@ def load_industry_metadata(path: str | Path) -> tuple[pd.DataFrame, pd.DataFrame
         for column in INDUSTRY_COLUMNS:
             values = group[column].dropna().astype(str).str.strip()
             if values.nunique() > 1:
-                conflicts.append({"key": group_key, "column": column, "values": " | ".join(sorted(values.unique()))})
+                conflicts.append(
+                    {
+                        "key": group_key,
+                        "column": column,
+                        "values": " | ".join(sorted(values.unique())),
+                    }
+                )
     if conflicts:
-        preview = conflicts[:10]
-        raise ValueError(f"Conflicting industry metadata after entity canonicalisation: {preview}")
+        raise ValueError(
+            "Conflicting industry metadata after entity canonicalisation: "
+            f"{conflicts[:10]}"
+        )
 
     aggregation = {column: (column, _first_known) for column in INDUSTRY_COLUMNS}
-    output = output.groupby(keys, as_index=False, observed=True, dropna=False).agg(**aggregation)
-    primary_industry = output["icb_l1"].where(output["icb_l1"].notna(), output["industry_name"])
+    output = output.groupby(
+        keys, as_index=False, observed=True, dropna=False
+    ).agg(**aggregation)
+    primary_industry = output["icb_l1"].where(
+        output["icb_l1"].notna(), output["industry_name"]
+    )
     output["financial_flag"] = _classify_financial(primary_industry)
+    is_financial, is_nonfinancial, is_unknown = _boolean_masks(output["financial_flag"])
     status = pd.DataFrame(
-        [{
-            "source_path": str(path),
-            "rows": len(raw),
-            "mapping_rows": len(output),
-            "financial_rows": int(output["financial_flag"].eq(True).sum()),
-            "nonfinancial_rows": int(output["financial_flag"].eq(False).sum()),
-            "unknown_rows": int(output["financial_flag"].isna().sum()),
-            "ticker_column": ticker_col,
-            "year_column": year_col or "",
-            "firm_name_column": firm_col or "",
-            "status": "LOADED",
-        }]
+        [
+            {
+                "source_path": str(path),
+                "rows": len(raw),
+                "mapping_rows": len(output),
+                "financial_rows": int(is_financial.sum()),
+                "nonfinancial_rows": int(is_nonfinancial.sum()),
+                "unknown_rows": int(is_unknown.sum()),
+                "ticker_column": ticker_col,
+                "year_column": year_col or "",
+                "firm_name_column": firm_col or "",
+                "status": "LOADED",
+            }
+        ]
     )
     return output, status
 
 
-def _classify_opinion(value: Any) -> tuple[str, float | np.floating, str]:
-    raw = "" if value is None or pd.isna(value) else str(value).strip()
-    token = _token(raw)
+def _classify_opinion(value: Any) -> tuple[str, float, str]:
+    token = _token(value)
     if not token:
         return "unknown", np.nan, "MISSING"
     if token in {"chap_nhan_toan_phan", "unmodified", "unqualified", "clean"}:
@@ -160,17 +185,28 @@ def load_audit_metadata(path: str | Path) -> tuple[pd.DataFrame, pd.DataFrame]:
 
     columns = list(pd.read_csv(path, nrows=0).columns)
     required = {
-        "issuer_ticker", "year", "period_type", "statement_scope",
-        "audit_status", "audit_indicator", "audit_value_raw",
+        "issuer_ticker",
+        "year",
+        "period_type",
+        "statement_scope",
+        "audit_status",
+        "audit_indicator",
+        "audit_value_raw",
     }
     missing = sorted(required - set(columns))
     if missing:
         raise ValueError(f"Audit metadata schema mismatch; missing columns: {missing}")
-    optional = [column for column in ("firm_name_raw", "audit_opinion_raw") if column in columns]
-    usecols = list(required) + optional
+    optional = [
+        column
+        for column in ("firm_name_raw", "audit_opinion_raw")
+        if column in columns
+    ]
+    usecols = sorted(required) + optional
     chunks: list[pd.DataFrame] = []
     source_rows = 0
-    for chunk in pd.read_csv(path, usecols=usecols, chunksize=250_000, low_memory=False):
+    for chunk in pd.read_csv(
+        path, usecols=usecols, chunksize=250_000, low_memory=False
+    ):
         source_rows += len(chunk)
         keep = (
             chunk["period_type"].map(_token).eq("annual")
@@ -181,12 +217,20 @@ def load_audit_metadata(path: str | Path) -> tuple[pd.DataFrame, pd.DataFrame]:
         selected = chunk.loc[keep].copy()
         if not selected.empty:
             chunks.append(selected)
-    opinion_raw = pd.concat(chunks, ignore_index=True) if chunks else pd.DataFrame(columns=usecols)
+    opinion_raw = (
+        pd.concat(chunks, ignore_index=True)
+        if chunks
+        else pd.DataFrame(columns=usecols)
+    )
 
+    opinion_columns = PANEL_KEYS + [
+        "audit_opinion_raw",
+        "audit_opinion_group",
+        "audit_opinion_clean_flag",
+        "audit_opinion_status",
+    ]
     if opinion_raw.empty:
-        opinions = pd.DataFrame(columns=PANEL_KEYS + [
-            "audit_opinion_raw", "audit_opinion_group", "audit_opinion_clean_flag", "audit_opinion_status"
-        ])
+        opinions = pd.DataFrame(columns=opinion_columns)
     else:
         firm_names = (
             opinion_raw["firm_name_raw"]
@@ -195,16 +239,22 @@ def load_audit_metadata(path: str | Path) -> tuple[pd.DataFrame, pd.DataFrame]:
         )
         opinion_raw["issuer_ticker"] = [
             canonicalize_entity_ticker(ticker, firm_name)
-            for ticker, firm_name in zip(opinion_raw["issuer_ticker"], firm_names, strict=True)
-        ]
-        opinion_raw["fiscal_year"] = pd.to_numeric(opinion_raw["year"], errors="coerce")
-        opinion_raw["audit_opinion_raw"] = (
-            opinion_raw["audit_opinion_raw"].where(
-                opinion_raw["audit_opinion_raw"].notna(), opinion_raw["audit_value_raw"]
+            for ticker, firm_name in zip(
+                opinion_raw["issuer_ticker"], firm_names, strict=True
             )
-            if "audit_opinion_raw" in opinion_raw
-            else opinion_raw["audit_value_raw"]
+        ]
+        opinion_raw["fiscal_year"] = pd.to_numeric(
+            opinion_raw["year"], errors="coerce"
         )
+        if "audit_opinion_raw" in opinion_raw:
+            opinion_raw["audit_opinion_raw"] = opinion_raw[
+                "audit_opinion_raw"
+            ].where(
+                opinion_raw["audit_opinion_raw"].notna(),
+                opinion_raw["audit_value_raw"],
+            )
+        else:
+            opinion_raw["audit_opinion_raw"] = opinion_raw["audit_value_raw"]
         opinion_raw = opinion_raw[
             opinion_raw["issuer_ticker"].ne("")
             & opinion_raw["fiscal_year"].notna()
@@ -212,20 +262,38 @@ def load_audit_metadata(path: str | Path) -> tuple[pd.DataFrame, pd.DataFrame]:
         ].copy()
         opinion_raw["fiscal_year"] = opinion_raw["fiscal_year"].astype(int)
         classified = opinion_raw["audit_opinion_raw"].map(_classify_opinion)
-        opinion_raw[["audit_opinion_group", "audit_opinion_clean_flag", "audit_opinion_status"]] = pd.DataFrame(
-            classified.tolist(), index=opinion_raw.index
-        )
+        opinion_raw[
+            [
+                "audit_opinion_group",
+                "audit_opinion_clean_flag",
+                "audit_opinion_status",
+            ]
+        ] = pd.DataFrame(classified.tolist(), index=opinion_raw.index)
+
         rows: list[dict[str, object]] = []
-        for (ticker, year), group in opinion_raw.groupby(PANEL_KEYS, observed=True, sort=False):
-            groups = sorted(set(group["audit_opinion_group"].dropna().astype(str)) - {"unknown"})
-            raw_values = sorted(set(group["audit_opinion_raw"].dropna().astype(str)))
+        for (ticker, year), group in opinion_raw.groupby(
+            PANEL_KEYS, observed=True, sort=False
+        ):
+            groups = sorted(
+                set(group["audit_opinion_group"].dropna().astype(str))
+                - {"unknown"}
+            )
+            raw_values = sorted(
+                set(group["audit_opinion_raw"].dropna().astype(str))
+            )
             if len(groups) <= 1:
                 first = group.iloc[0]
                 row = {
                     "audit_opinion_raw": first["audit_opinion_raw"],
                     "audit_opinion_group": first["audit_opinion_group"],
-                    "audit_opinion_clean_flag": first["audit_opinion_clean_flag"],
-                    "audit_opinion_status": "EXACT_ONE_OPINION" if len(group) == 1 else "CONSISTENT_DUPLICATES",
+                    "audit_opinion_clean_flag": first[
+                        "audit_opinion_clean_flag"
+                    ],
+                    "audit_opinion_status": (
+                        "EXACT_ONE_OPINION"
+                        if len(group) == 1
+                        else "CONSISTENT_DUPLICATES"
+                    ),
                 }
             else:
                 row = {
@@ -236,15 +304,19 @@ def load_audit_metadata(path: str | Path) -> tuple[pd.DataFrame, pd.DataFrame]:
                 }
             row.update({"issuer_ticker": ticker, "fiscal_year": int(year)})
             rows.append(row)
-        opinions = pd.DataFrame(rows)
+        opinions = pd.DataFrame(rows, columns=opinion_columns)
 
-    metadata = auditor.merge(opinions, on=PANEL_KEYS, how="outer", validate="one_to_one")
+    metadata = auditor.merge(
+        opinions, on=PANEL_KEYS, how="outer", validate="one_to_one"
+    )
     status = auditor_status.copy()
     status["source_rows_with_opinion_scan"] = source_rows
     status["audit_opinion_firm_years"] = len(opinions)
     status["audit_metadata_firm_years"] = len(metadata)
     status["ambiguous_opinion_firm_years"] = int(
-        opinions.get("audit_opinion_group", pd.Series(dtype=str)).eq("ambiguous").sum()
+        opinions.get("audit_opinion_group", pd.Series(dtype=str))
+        .eq("ambiguous")
+        .sum()
     )
     return metadata, status
 
@@ -266,15 +338,25 @@ def enrich_panel_metadata(
     unknown_industry_policy: str = "exclude",
 ) -> tuple[pd.DataFrame, dict[str, pd.DataFrame]]:
     frame = panel.copy()
-    frame["issuer_ticker"] = frame["issuer_ticker"].astype(str).str.strip().str.upper()
-    frame["fiscal_year"] = pd.to_numeric(frame["fiscal_year"], errors="coerce").astype("Int64")
+    frame["issuer_ticker"] = (
+        frame["issuer_ticker"].astype(str).str.strip().str.upper()
+    )
+    frame["fiscal_year"] = pd.to_numeric(
+        frame["fiscal_year"], errors="coerce"
+    ).astype("Int64")
     statuses: dict[str, pd.DataFrame] = {}
 
     if industry_path is not None:
         industry, status = load_industry_metadata(industry_path)
         statuses["industry"] = status
-        merge_keys = ["issuer_ticker"] + (["fiscal_year"] if "fiscal_year" in industry else [])
-        drop_columns = [column for column in INDUSTRY_COLUMNS + ["financial_flag"] if column in frame]
+        merge_keys = ["issuer_ticker"] + (
+            ["fiscal_year"] if "fiscal_year" in industry else []
+        )
+        drop_columns = [
+            column
+            for column in INDUSTRY_COLUMNS + ["financial_flag"]
+            if column in frame
+        ]
         frame = frame.drop(columns=drop_columns).merge(
             industry, on=merge_keys, how="left", validate="many_to_one"
         )
@@ -291,15 +373,18 @@ def enrich_panel_metadata(
     unknown_policy = str(unknown_industry_policy).lower()
     if unknown_policy not in {"exclude", "include", "error"}:
         raise ValueError(f"Unknown industry policy: {unknown_industry_policy}")
-    if unknown_policy == "error" and frame["financial_flag"].isna().any():
+    is_financial, is_nonfinancial, is_unknown = _boolean_masks(
+        frame["financial_flag"]
+    )
+    if unknown_policy == "error" and is_unknown.any():
         raise ValueError("Financial classification is missing for one or more panel rows")
 
-    eligible = frame["financial_flag"].eq(False)
+    eligible = is_nonfinancial.copy()
     if unknown_policy == "include":
-        eligible |= frame["financial_flag"].isna()
-    frame["analysis_eligible"] = eligible.astype(bool)
+        eligible |= is_unknown
+    frame["analysis_eligible"] = eligible
     frame["exclusion_reason"] = np.select(
-        [frame["financial_flag"].eq(True), frame["financial_flag"].isna()],
+        [is_financial.to_numpy(), is_unknown.to_numpy()],
         ["financial_firm", "unknown_industry"],
         default="eligible",
     )
@@ -312,30 +397,63 @@ def select_analysis_sample(
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     config = sample_config or {}
     exclude_financial = bool(config.get("exclude_financial_firms", True))
-    unknown_policy = str(config.get("unknown_industry_policy", "exclude")).lower()
+    unknown_policy = str(
+        config.get("unknown_industry_policy", "exclude")
+    ).lower()
+    if unknown_policy not in {"exclude", "include", "error"}:
+        raise ValueError(f"Unknown industry policy: {unknown_policy}")
+
     frame = panel.copy()
     frame["financial_flag"] = _derive_financial_flag(frame)
-    if unknown_policy == "error" and frame["financial_flag"].isna().any():
-        raise ValueError("Cannot construct analysis sample: unknown financial classifications remain")
+    is_financial, is_nonfinancial, is_unknown = _boolean_masks(
+        frame["financial_flag"]
+    )
+    if unknown_policy == "error" and is_unknown.any():
+        raise ValueError(
+            "Cannot construct analysis sample: unknown financial classifications remain"
+        )
 
     if exclude_financial:
-        keep = frame["financial_flag"].eq(False)
+        keep = is_nonfinancial.copy()
         if unknown_policy == "include":
-            keep |= frame["financial_flag"].isna()
+            keep |= is_unknown
     else:
-        keep = pd.Series(True, index=frame.index)
+        keep = pd.Series(True, index=frame.index, dtype=bool)
 
-    firm_years = frame[PANEL_KEYS].drop_duplicates()
-    financial_firm_years = frame.loc[frame["financial_flag"].eq(True), PANEL_KEYS].drop_duplicates()
-    unknown_firm_years = frame.loc[frame["financial_flag"].isna(), PANEL_KEYS].drop_duplicates()
     selected = frame.loc[keep].copy().reset_index(drop=True)
+    firm_years = frame[PANEL_KEYS].drop_duplicates()
+    financial_firm_years = frame.loc[
+        is_financial, PANEL_KEYS
+    ].drop_duplicates()
+    unknown_excluded = is_unknown & ~keep
+    unknown_firm_years = frame.loc[
+        unknown_excluded, PANEL_KEYS
+    ].drop_duplicates()
     selected_firm_years = selected[PANEL_KEYS].drop_duplicates()
     manifest = pd.DataFrame(
         [
-            {"stage": "master_panel", "rows": len(frame), "issuer_years": len(firm_years)},
-            {"stage": "excluded_financial_firms", "rows": int(frame["financial_flag"].eq(True).sum()), "issuer_years": len(financial_firm_years)},
-            {"stage": "excluded_unknown_industry", "rows": int((frame["financial_flag"].isna() & ~keep).sum()), "issuer_years": len(unknown_firm_years) if unknown_policy != "include" else 0},
-            {"stage": "nonfinancial_analysis_panel", "rows": len(selected), "issuer_years": len(selected_firm_years)},
+            {
+                "stage": "master_panel",
+                "rows": len(frame),
+                "issuer_years": len(firm_years),
+            },
+            {
+                "stage": "excluded_financial_firms",
+                "rows": int(is_financial.sum()) if exclude_financial else 0,
+                "issuer_years": (
+                    len(financial_firm_years) if exclude_financial else 0
+                ),
+            },
+            {
+                "stage": "excluded_unknown_industry",
+                "rows": int(unknown_excluded.sum()),
+                "issuer_years": len(unknown_firm_years),
+            },
+            {
+                "stage": "nonfinancial_analysis_panel",
+                "rows": len(selected),
+                "issuer_years": len(selected_firm_years),
+            },
         ]
     )
     return selected, manifest
