@@ -6,9 +6,12 @@ from typing import Any, Mapping
 
 
 LOCKED_FINAL_CONTRACT: dict[str, Any] = {
-    "version": "final-results-contract-v2",
+    "version": "final-results-contract-v3",
     "analysis_population": "locked_nonfinancial_panel",
     "training_population": "unrestricted_nonfinancial_history",
+    "source_start_year_role": "lag_support_only",
+    "lag_support_years": 1,
+    "model_test_start_rule": "training_start_plus_one",
     "require_training_start_year": True,
     "jones_ordinary_intercept": False,
     "jones_feature_centering": False,
@@ -22,7 +25,7 @@ LOCKED_FINAL_CONTRACT: dict[str, Any] = {
     "applied_primary_test": "paired_difference",
     "stacked_state_slopes": "fully_interacted",
     "signed_da_difference_family": "one_unique_test_per_focal",
-    "supplemental_inputs": "required",
+    "supplemental_inputs": "required_for_full_scope",
 }
 
 
