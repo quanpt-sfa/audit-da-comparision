@@ -23,6 +23,9 @@ settings:
   direct_thresholds: [0.0025, 0.005, 0.01, 0.02]
   tail_quantile: 0.90
   negligible_sd: 1.0e-12
+  parallel_workers: 31
+  simulation_batch_size: 32
+  blas_threads_per_worker: 1
 
 optional_paths:
   concentration_input: artifacts/cfs_shifting_validation/concentration_cases.csv
