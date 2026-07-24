@@ -1,12 +1,10 @@
 \section{Results}\label{sec:results}
 
-\begin{quote}
-\small\textbf{Working-draft rerun status.} The point estimates below reproduce the locked 23 July 2026 pipeline. The revised research design additionally requires pooled-architecture sensitivities, scale-normalised and signed Shapley outputs, issuer-cluster bootstrap intervals for proportions, common post-audit CDF rank outputs, expanded time-shift benchmarks, year-specific Jaccard sensitivity, paired-difference association tests, revised preparation-friction sampling, and family-level multiplicity diagnostics. Table~\ref{tab:protocol_extension_outputs} reserves the corresponding reporting slots. These entries remain pending until the analysis pipeline is rerun; no values are imputed or inferred from the existing outputs.
-\end{quote}
+\subsection{Analysis population and direct reporting-state differences}\label{subsec:results_sample}
 
-\subsection{CFO revisions dominate direct reporting-state differences}\label{subsec:results_sample}
+The analysis begins with 8,584 issuer-years for which both constructed pre-audit and post-audit annual states are available. Of these, 8,461 have complete profit, CFO, total-accrual, and beginning-asset measures for the direct comparisons. The historically estimated pooled post-audit-reference accrual specifications yield 7,801 issuer-years for the primary RQ1 and RQ2 model analyses. Because the source panel begins in 2016, the first estimable test year is 2017; all reported model tests therefore use historical audited observations strictly preceding the test year.
 
-The locked population contains 8,584 issuer-years; 8,461 have complete profit, CFO, and lagged assets, and 7,789 enter the common accrual-model sample. Table~\ref{tab:descriptive_statistics} reports descriptive statistics. Several scaled variables are heavy-tailed: for example, the SD of $|DA^{pre}|$ is 0.6042 while its median is 0.0624. We therefore use medians for the RQ1 component-dominance diagnostic, means for decomposition accounting, and one-percent trimmed means to assess tail sensitivity.
+Table~\ref{tab:descriptive_statistics} shows that direct reporting-state differences are concentrated in CFO rather than profit. The median absolute CFO difference is 0.00444 of beginning assets, compared with 0.00025 for profit, a ratio of approximately 18 to one. Model-based quantities remain right-skewed, but considerably less so after the historical one-percent winsorisation prescribed in Section~\ref{subsec:rq1_design}; the modified-Jones post-audit-reference median $|DA^{pre}|$ is 0.0596 and its mean is 0.0927.
 
 \begin{table}[htbp]
 \centering
@@ -18,7 +16,7 @@ The locked population contains 8,584 issuer-years; 8,461 have complete profit, C
 \toprule
 Variable & $N$ & Mean & SD & P25 & Median & P75 \\
 \midrule
-\multicolumn{7}{l}{\textit{Panel A: Complete reporting-state sample}} \\
+\multicolumn{7}{l}{\textit{Panel A: Complete direct-comparison sample}} \\
 $\ln(A_{t-1})$ & 8,461 & 27.4663 & 1.5007 & 26.4666 & 27.3442 & 28.3134 \\
 $PAT^{pre}/A_{t-1}$ & 8,461 & 0.0528 & 0.1604 & 0.0091 & 0.0402 & 0.0884 \\
 $PAT^{post}/A_{t-1}$ & 8,461 & 0.0511 & 0.1705 & 0.0091 & 0.0407 & 0.0891 \\
@@ -26,80 +24,127 @@ $CFO^{pre}/A_{t-1}$ & 8,461 & 0.0535 & 0.5495 & -0.0105 & 0.0516 & 0.1341 \\
 $CFO^{post}/A_{t-1}$ & 8,461 & 0.0474 & 0.5291 & -0.0105 & 0.0507 & 0.1296 \\
 $|\Delta PAT|$ & 8,461 & 0.0047 & 0.0480 & 0.0000 & 0.0002 & 0.0017 \\
 $|\Delta CFO|$ & 8,461 & 0.0392 & 0.1991 & 0.0002 & 0.0044 & 0.0254 \\
-$RD^{CFO}$ & 8,461 & 0.0674 & 0.1346 & 0.0074 & 0.0161 & 0.0549 \\
-$G^{PAT}$ & 8,461 & 0.2483 & 0.4321 & 0.0000 & 0.0000 & 0.0000 \\
-$S^{CFO\mbox{-}sign}$ & 8,461 & 0.0806 & 0.2722 & 0.0000 & 0.0000 & 0.0000 \\
-$S^{CFO\mbox{-}category}$ & 8,461 & 0.2168 & 0.4121 & 0.0000 & 0.0000 & 0.0000 \\
 \addlinespace
-\multicolumn{7}{l}{\textit{Panel B: Modified-Jones post-audit-reference sample}} \\
-$DA^{pre}$ & 7,789 & -0.0046 & 0.6153 & -0.0709 & -0.0093 & 0.0539 \\
-$DA^{post}$ & 7,789 & -0.0011 & 0.5931 & -0.0670 & -0.0085 & 0.0502 \\
-$|DA^{pre}|$ & 7,789 & 0.1165 & 0.6042 & 0.0280 & 0.0624 & 0.1250 \\
-$|DA^{post}|$ & 7,789 & 0.1078 & 0.5833 & 0.0262 & 0.0592 & 0.1169 \\
-$D$ & 7,789 & 0.0087 & 0.1971 & -0.0041 & 0.0000 & 0.0066 \\
-$\phi^{PAT}$ & 7,789 & -0.0017 & 0.0487 & -0.0002 & 0.0000 & 0.0001 \\
-$\phi^{CFO}$ & 7,789 & 0.0104 & 0.1909 & -0.0024 & 0.0000 & 0.0057 \\
-$RD^{DA}$ & 7,789 & 0.0965 & 0.1488 & 0.0121 & 0.0312 & 0.1113 \\
-$S^{DA\mbox{-}sign}$ & 7,789 & 0.1008 & 0.3011 & 0.0000 & 0.0000 & 0.0000 \\
-$S^{high\mbox{-}|DA|}$ & 7,789 & 0.0474 & 0.2125 & 0.0000 & 0.0000 & 0.0000 \\
+\multicolumn{7}{l}{\textit{Panel B: Modified-Jones pooled post-audit-reference sample}} \\
+$DA^{pre}$ & 7,801 & -0.0041 & 0.1355 & -0.0670 & -0.0078 & 0.0522 \\
+$DA^{post}$ & 7,801 & -0.0016 & 0.1286 & -0.0623 & -0.0066 & 0.0503 \\
+$|DA^{pre}|$ & 7,801 & 0.0927 & 0.0990 & 0.0260 & 0.0596 & 0.1194 \\
+$|DA^{post}|$ & 7,801 & 0.0874 & 0.0944 & 0.0250 & 0.0564 & 0.1116 \\
+$D$ & 7,801 & 0.0049 & 0.0590 & -0.0037 & 0.0000 & 0.0059 \\
+$\phi^{PAT}$ & 7,801 & -0.0008 & 0.0159 & -0.0002 & 0.0000 & 0.0001 \\
+$\phi^{CFO}$ & 7,801 & 0.0057 & 0.0619 & -0.0022 & 0.0000 & 0.0055 \\
 \bottomrule
 \end{tabular}%
 }
 \begin{minipage}{0.97\textwidth}\footnotesize
-\textit{Notes:} Financial variables other than $\ln(A_{t-1})$ are scaled by beginning audited assets. Rank-based and switch outcomes are excluded from this descriptive table until the common post-audit-CDF rerun is complete. Panel~A contains 8,461 issuer-years with complete constructed pre- and post-audit PAT, CFO, and common lagged assets. Panel~B contains 7,789 issuer-years from the historically estimated modified-Jones model under the post-audit-reference benchmark. Direct reporting-state values are not winsorised; model inputs are winsorised within the historical estimation set as described in Section~\ref{subsec:rq1_design}.
+\textit{Notes:} Financial variables other than $\ln(A_{t-1})$ are scaled by beginning audited assets. Panel~A uses direct reporting-state values without winsorisation. Panel~B uses the modified-Jones model under the pooled historical architecture and post-audit-reference benchmark. Model inputs and total accruals are winsorised using boundaries estimated only from the corresponding historical audited training pool.
 \end{minipage}
 \end{table}
-Table~\ref{tab:direct_revisions} shows that the median absolute CFO difference is 18 times the median profit difference. CFO exceeds one percent of beginning assets in 38.5 percent of pairs, versus 7.3 percent for profit. CFO alone is material in 34.8 percent of pairs, profit alone in 3.6 percent, both in 3.7 percent, and neither in 57.9 percent. Under the study's asymmetric consequence thresholds, 32.0 percent of pairs are CFO-dominant and 6.2 percent are profit-dominant. These direct differences motivate component attribution rather than establish its result. The revised protocol also reports neighbouring 0.25-, 0.50-, 1.00-, and 2.00-percent asset-scaled thresholds so that the descriptive contrast is not tied to a single materiality convention; those sensitivity counts are included in the rerun manifest in Table~\ref{tab:protocol_extension_outputs}.
+
+Table~\ref{tab:direct_revisions} reports the prespecified threshold sensitivity. At the common one-percent cutoff, CFO is material in 38.5 percent of pairs and profit in 7.3 percent. CFO alone is material in 34.8 percent, compared with 3.6 percent for profit alone. The ordering persists at every neighbouring cutoff. Under the asymmetric classification used in the research design, 32.0 percent of issuer-years have material CFO differences while profit remains stable; 6.2 percent have non-stable profit while CFO is not material. These are descriptive reporting-state differences and do not identify either state as correct.
 
 \begin{table}[htbp]
 \centering
 \caption{Direct constructed-pre-to-post-audit annual differences}
 \label{tab:direct_revisions}
-\small
-\begin{tabular}{p{0.62\textwidth}rr}
-\toprule
-Statistic & Estimate & Issuer-years \\
-\midrule
-\multicolumn{3}{l}{\textit{Panel A: Symmetric descriptive thresholds}} \\
-Median $|\Delta PAT|$ & 0.00025 & 8,461 \\
-Median $|\Delta CFO|$ & 0.00444 & 8,461 \\
-Median $|\Delta CFO|$ / median $|\Delta PAT|$ & 18.01 & 8,461 \\
-Share with $|\Delta PAT|>0.01$ & 0.073 & 8,461 \\
-Share with $|\Delta CFO|>0.01$ & 0.385 & 8,461 \\
-CFO material and PAT non-material at the common 1\% cutoff & 0.348 & 8,461 \\
-PAT material and CFO non-material at the common 1\% cutoff & 0.036 & 8,461 \\
-Both components material at the common 1\% cutoff & 0.037 & 8,461 \\
-Neither component material at the common 1\% cutoff & 0.579 & 8,461 \\
-\addlinespace
-\multicolumn{3}{l}{\textit{Panel B: Prespecified asymmetric consequence classification}} \\
-CFO material ($|\Delta CFO|\geq0.01$) and PAT stable ($|\Delta PAT|\leq0.005$) & \multicolumn{1}{c}{Pending rerun} & 8,461 \\
-PAT non-stable and CFO non-material & \multicolumn{1}{c}{Pending rerun} & 8,461 \\
-\bottomrule
-\end{tabular}
-\begin{minipage}{0.94\textwidth}\footnotesize
-\textit{Notes:} Differences are scaled by beginning audited assets. Panel~A uses a common one-percent descriptive cutoff for both components. Panel~B applies the asymmetric conventions prespecified in Section~\ref{subsec:direct_design}; its values and nearby-threshold sensitivity are generated by \texttt{31\_complete\_manuscript\_results.py}.
-\end{minipage}
-\end{table}
-\subsection{RQ1: CFO carries the primary-model component attribution}\label{subsec:results_rq1}
-
-Table~\ref{tab:jones_family_attribution} reports nearly identical Jones and modified-Jones results. Mean $D$ is about 0.0087, while the one-percent trimmed mean is about 0.0050, roughly 43 percent lower. The mean comprises a positive CFO component of about 0.0104 and a negative profit component of about $-0.0017$. CFO is the larger absolute component in 69.1 percent of observations. The median $|\phi^{CFO}|-|\phi^{PAT}|$ is 0.00262--0.00268, and both issuer-cluster intervals exclude zero. Architecture-scale-normalised contrasts, CFO-dominant shares under the new pooled-architecture sensitivities, and signed Shapley quadrants are pending rerun in Table~\ref{tab:protocol_extension_outputs}; raw contribution magnitudes are not compared across model families until those normalised outputs are available.
-
-\begin{table}[htbp]
-\centering
-\caption{Jones-family component attribution for RQ1}
-\label{tab:jones_family_attribution}
-\small
+\scriptsize
 \resizebox{\textwidth}{!}{%
-\begin{tabular}{lrrrrrrr}
+\begin{tabular}{lrrrrrr}
 \toprule
-Model & $N$ & Mean $D$ & Trimmed mean $D$ & Mean $\phi^{PAT}$ & Mean $\phi^{CFO}$ & Median $|\phi^{CFO}|-|\phi^{PAT}|$ & CFO larger \\
+Cutoff & PAT material & CFO material & CFO only & PAT only & Both & Neither \\
 \midrule
-Jones & 7,789 & 0.008782 & 0.004965 & $-0.001657$ & 0.010439 & 0.002680 [0.002118, 0.003146] & 69.1\% \\
-Modified Jones & 7,789 & 0.008736 & 0.004931 & $-0.001660$ & 0.010396 & 0.002618 [0.002149, 0.003106] & 69.1\% \\
+0.25\% of assets & 20.3\% & 57.0\% & 43.0\% & 6.3\% & 14.0\% & 36.7\% \\
+0.50\% of assets & 12.7\% & 48.6\% & 40.8\% & 4.9\% & 7.8\% & 46.5\% \\
+1.00\% of assets & 7.3\% & 38.5\% & 34.8\% & 3.6\% & 3.7\% & 57.9\% \\
+2.00\% of assets & 4.1\% & 28.8\% & 27.1\% & 2.5\% & 1.6\% & 68.8\% \\
+\addlinespace
+\multicolumn{7}{l}{\textit{Asymmetric consequence classification}} \\
+\multicolumn{3}{l}{CFO material ($|\Delta CFO|\geq0.01$), PAT stable ($|\Delta PAT|\leq0.005$)} & \multicolumn{4}{r}{32.0\%} \\
+\multicolumn{3}{l}{PAT non-stable, CFO non-material} & \multicolumn{4}{r}{6.2\%} \\
 \bottomrule
 \end{tabular}%
 }
 \begin{minipage}{0.97\textwidth}\footnotesize
-\textit{Notes:} $D=|DA^{pre}|-|DA^{post}|$. The benchmark holds post-audit normal-accrual inputs fixed. All statistics are reconstructed from the population-locked pipeline executed on 23 July 2026 (population hash beginning \texttt{2c937af7}); no earlier-vintage RQ1 output is used. Trimmed means remove one percent from each tail. Brackets contain issuer-cluster bootstrap 95-percent intervals for the paired median difference. Shapley components sum to $D$ observation by observation.
+\textit{Notes:} $N=8{,}461$ for every row. Differences are scaled by beginning audited assets. The asymmetric rows apply the conventions prespecified in Section~\ref{subsec:direct_design}.
+\end{minipage}
+\end{table}
+
+\subsection{RQ1: CFO is the larger attributed component}\label{subsec:results_rq1}
+
+Table~\ref{tab:jones_family_attribution} reports the pooled post-audit-reference results. Across all four model families, the median absolute-component contrast is approximately 0.0023 of beginning assets and every issuer-cluster bootstrap interval excludes zero. CFO is the larger absolute Shapley component in 67.7 percent of issuer-years, with lower confidence bounds near 66 percent. For the two confirmatory Jones-family specifications, mean $D$ is 0.0051 under Jones and 0.0049 under modified Jones. The corresponding one-percent trimmed means are 0.0043 and 0.0042. The average CFO allocation is positive, whereas the average profit allocation is negative, but the confirmatory conclusion is based on the paired median absolute-component contrast rather than these means.
+
+\begin{table}[htbp]
+\centering
+\caption{Primary component attribution for RQ1}
+\label{tab:jones_family_attribution}
+\scriptsize
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lrrrrrrrr}
+\toprule
+Model & $N$ & Mean $D$ & Trimmed mean $D$ & Mean $\phi^{PAT}$ & Mean $\phi^{CFO}$ & Median contrast [95\% CI] & CFO larger [95\% CI] & Normalised median \\
+\midrule
+Jones & 7,801 & 0.00506 & 0.00429 & -0.00073 & 0.00579 & 0.00231 [0.00189, 0.00282] & 67.7\% [66.1, 69.5] & 0.0179 \\
+Modified Jones & 7,801 & 0.00489 & 0.00419 & -0.00078 & 0.00567 & 0.00232 [0.00187, 0.00287] & 67.7\% [66.0, 69.5] & 0.0177 \\
+Kothari-style ROA-adjusted & 7,801 & 0.00596 & 0.00511 & 0.00011 & 0.00584 & 0.00231 [0.00187, 0.00285] & 67.7\% [66.1, 69.5] & 0.0186 \\
+Nonlinear modified Jones & 7,801 & 0.00601 & 0.00519 & 0.00034 & 0.00567 & 0.00229 [0.00187, 0.00285] & 67.7\% [66.0, 69.4] & 0.0185 \\
+\bottomrule
+\end{tabular}%
+}
+\begin{minipage}{0.97\textwidth}\footnotesize
+\textit{Notes:} The contrast is $|\phi^{CFO}|-|\phi^{PAT}|$. Brackets report 2,000-draw issuer-cluster bootstrap percentile intervals. The normalised median divides the observation-level contrast by the historical residual SD for the corresponding model and test year.
+\end{minipage}
+\end{table}
+
+The signed allocations qualify the absolute-dominance result. Under modified Jones, both components reduce absolute discretionary accruals in 40.8 percent of observations. CFO reduces absolute discretionary accruals while profit increases them in 20.6 percent; profit reduces them while CFO increases them in 23.1 percent; both increase absolute discretionary accruals in 15.5 percent. Thus, CFO dominance does not imply that both reporting-state movements point toward a common lower-abnormality state.
+
+The result is stable to the prespecified architecture and reference-state checks. Table~\ref{tab:architecture_sensitivity} shows that the median contrast remains between 0.00223 and 0.00233 across pooled, ICB-industry fixed-effect, industry-specific-slope, and trailing-five-year architectures. The CFO-larger share ranges from 67.5 to 67.8 percent. Pooled pre-audit-reference medians are also nearly identical to the post-audit-reference values. Industry-specific slopes retain 7,666 observations because cells below the 40-observation historical minimum are excluded.
+
+\begin{table}[htbp]
+\centering
+\caption{RQ1 architecture and reference-state sensitivity}
+\label{tab:architecture_sensitivity}
+\scriptsize
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lrrrrrr}
+\toprule
+Model & Pooled post ref. & Industry FE & Industry slopes & Trailing five-year & Pooled pre ref. & CFO-larger range \\
+\midrule
+Jones & 0.002315 & 0.002293 & 0.002232 & 0.002302 & 0.002330 & 67.5--67.8\% \\
+Modified Jones & 0.002324 & 0.002289 & 0.002289 & 0.002328 & 0.002325 & 67.6--67.8\% \\
+Kothari-style ROA-adjusted & 0.002315 & 0.002316 & 0.002239 & 0.002316 & 0.002334 & 67.6--67.8\% \\
+Nonlinear modified Jones & 0.002290 & 0.002285 & 0.002236 & 0.002291 & 0.002294 & 67.6--67.8\% \\
+\bottomrule
+\end{tabular}%
+}
+\begin{minipage}{0.97\textwidth}\footnotesize
+\textit{Notes:} Entries are median absolute-component contrasts. All issuer-cluster bootstrap intervals exclude zero. Post ref. and pre ref. denote post-audit-reference and pre-audit-reference benchmarks. Industry slopes use ICB Level-1 groups and exclude historical cells below the prespecified minimum.
+\end{minipage}
+\end{table}
+
+The highest pre-audit-$|DA|$ decile is not necessary for the conclusion. Excluding that decile leaves a Jones median contrast of 0.00222 (95-percent CI: 0.00186--0.00273) and a modified-Jones median of 0.00223 (95-percent CI: 0.00184--0.00278). The corresponding CFO-larger shares are 68.5 and 68.4 percent. Mean $D$ is negative in the first six pre-audit-$|DA|$ deciles and positive in the upper four, indicating that a positive full-sample mean is tail-concentrated even though component dominance is not.
+
+Table~\ref{tab:component_time_shift} reports the contemporaneous-pairing diagnostics. Under the cyclic within-issuer benchmark, realised median contrasts exceed simulated medians by approximately 0.0001 for both Jones and modified Jones. The Monte Carlo probability is below 0.001. The stricter independently sampled within-issuer and same-year/industry peer benchmarks produce similar point differences but substantially wider simulation distributions; their Monte Carlo probabilities range from 0.14 to 0.20. Consequently, the primary component-attribution conclusion is robust, whereas the additional claim that contemporaneous pairing is uniquely informative is supported by the cyclic benchmark but not by both stricter donor designs.
+
+\begin{table}[htbp]
+\centering
+\caption{Median time-shift diagnostics for RQ1}
+\label{tab:component_time_shift}
+\scriptsize
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{llrrrrr}
+\toprule
+Model & Donor design & $N$ & Realised median & Simulated median [95\% interval] & Realised minus simulated & $p_{MC}$ \\
+\midrule
+Jones & Cyclic within issuer & 7,767 & 0.002330 & 0.002203 [0.002159, 0.002250] & 0.000126 & $<0.001$ \\
+Jones & Independent within issuer & 7,767 & 0.002330 & 0.002200 [0.001994, 0.002452] & 0.000129 & 0.140 \\
+Jones & Same year/industry peer & 7,767 & 0.002330 & 0.002219 [0.001954, 0.002523] & 0.000111 & 0.201 \\
+Modified Jones & Cyclic within issuer & 7,767 & 0.002331 & 0.002227 [0.002178, 0.002285] & 0.000104 & $<0.001$ \\
+Modified Jones & Independent within issuer & 7,767 & 0.002331 & 0.002225 [0.002011, 0.002460] & 0.000107 & 0.154 \\
+Modified Jones & Same year/industry peer & 7,767 & 0.002331 & 0.002222 [0.001953, 0.002535] & 0.000110 & 0.186 \\
+\bottomrule
+\end{tabular}%
+}
+\begin{minipage}{0.97\textwidth}\footnotesize
+\textit{Notes:} Each design uses 2,000 draws. The statistic is the realised median $|\phi^{CFO}|-|\phi^{PAT}|$ minus the simulated median. The benchmark breaks contemporaneous pairing but does not identify a correct reporting state.
 \end{minipage}
 \end{table}
