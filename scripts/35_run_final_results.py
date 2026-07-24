@@ -33,12 +33,20 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
             "Delete stale outputs, audit required inputs, run the final Results "
-            "pipeline, and audit the completed bundle."
+            "pipeline, and audit the completed bundle. Core scope is the default."
         )
     )
     parser.add_argument("--config", default="config/results_completion.yaml")
     parser.add_argument("--workers", type=int, default=None)
     parser.add_argument("--simulation-batch-size", type=int, default=None)
+    parser.add_argument(
+        "--include-supplemental",
+        action="store_true",
+        help=(
+            "Also require and run line-item concentration and near-zero-CFO "
+            "supplemental diagnostics. This scope may require raw CFS data."
+        ),
+    )
     parser.add_argument(
         "--clean",
         action="store_true",
@@ -55,10 +63,14 @@ def main() -> None:
         print(f"[final-run] removed stale outputs: {output_dir}")
 
     audit_module = _load_audit_module()
-    pre = audit_module.run_audit(config_path, check_outputs=False)
+    pre = audit_module.run_audit(
+        config_path,
+        check_outputs=False,
+        require_supplemental=args.include_supplemental,
+    )
     print(
         "[final-run] input and method contract PASS: "
-        f"{pre['contract_sha256']}"
+        f"scope={pre['scope']} sha256={pre['contract_sha256']}"
     )
 
     command = [
@@ -68,6 +80,8 @@ def main() -> None:
         str(config_path),
         "--overwrite",
     ]
+    if args.include_supplemental:
+        command.append("--include-supplemental")
     if args.workers is not None:
         command.extend(["--workers", str(max(1, args.workers))])
     if args.simulation_batch_size is not None:
@@ -81,7 +95,11 @@ def main() -> None:
     if completed.returncode != 0:
         raise SystemExit(completed.returncode)
 
-    final = audit_module.run_audit(config_path, check_outputs=True)
+    final = audit_module.run_audit(
+        config_path,
+        check_outputs=True,
+        require_supplemental=args.include_supplemental,
+    )
     print(f"[final-run] completed and audited: {final['audit_path']}")
 
 
