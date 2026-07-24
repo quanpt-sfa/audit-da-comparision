@@ -7,9 +7,9 @@ sample:
   unknown_industry_policy: exclude
 
 runtime:
-  # Four OOS test families plus one accrual-quality bootstrap job.
-  # Values above 5 do not add useful process-level parallelism.
-  workers: 5
+  # Four OOS test families run concurrently. The accrual-quality bootstrap is
+  # vectorized separately, so values above 4 do not add useful parallelism.
+  workers: 4
   # Resample issuer-cluster aggregates in vectorized batches inside each worker.
   bootstrap_batch_size: 128
 
