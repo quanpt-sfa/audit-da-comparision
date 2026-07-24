@@ -15,6 +15,8 @@ SRC_ROOT = REPO_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
+from audit_da.panel_metadata import select_analysis_sample  # noqa: E402
+from audit_da.results_completion.core import DEFAULT_MODELS  # noqa: E402
 from audit_da.results_completion.final_contract import (  # noqa: E402
     LOCKED_FINAL_CONTRACT,
     final_contract_sha256,
@@ -147,23 +149,78 @@ def _audit_inputs(
         raise FileNotFoundError(f"Locked analysis panel missing: {analysis_path}")
     if not training_path.exists():
         raise FileNotFoundError(f"Unrestricted training panel missing: {training_path}")
-    training = pd.read_csv(training_path, usecols=["fiscal_year", "audit_status"])
+
     settings = config["settings"]
-    start_year = int(settings["training_start_year"])
+    contract = config["final_method_contract"]
+    source_start = int(settings["source_start_year"])
+    training_start = int(settings["training_start_year"])
+    test_start = int(settings["test_start_year"])
+    lag_support_years = int(contract["lag_support_years"])
+    if training_start != source_start + lag_support_years:
+        raise ValueError(
+            "Usable training start must follow the source support year by the "
+            f"locked lag count: source={source_start}, lag={lag_support_years}, "
+            f"training={training_start}"
+        )
+    if test_start != training_start + 1:
+        raise ValueError(
+            "The first model test year must follow the first usable training year: "
+            f"training={training_start}, test={test_start}"
+        )
+
+    master_training = pd.read_csv(training_path, low_memory=False)
+    training, _ = select_analysis_sample(master_training, config.get("sample", {}))
     audited_label = str(settings["audited_label"])
-    start_rows = training.loc[
-        training.fiscal_year.eq(start_year)
+    source_rows = training.loc[
+        training.fiscal_year.eq(source_start)
         & training.audit_status.eq(audited_label)
-    ]
+    ].copy()
+    if source_rows.empty:
+        raise ValueError(
+            f"Training panel has no audited lag-support observations for {source_start}"
+        )
+    start_rows = training.loc[
+        training.fiscal_year.eq(training_start)
+        & training.audit_status.eq(audited_label)
+    ].copy()
     if start_rows.empty:
         raise ValueError(
-            f"Training panel has no audited estimation history for {start_year}"
+            f"Training panel has no audited estimation observations for {training_start}"
         )
+
+    models = config.get("models") or DEFAULT_MODELS
+    minimum_rows = int(settings["min_train_rows"])
+    complete_counts: dict[str, int] = {}
+    for model_name, features in models.items():
+        needed = ["ta_scaled", *list(features)]
+        missing = sorted(set(needed) - set(start_rows.columns))
+        if missing:
+            raise ValueError(
+                f"Training panel missing model columns for {model_name}: {missing}"
+            )
+        complete = (
+            start_rows[needed]
+            .replace([np.inf, -np.inf], np.nan)
+            .dropna(subset=needed)
+        )
+        complete_counts[str(model_name)] = int(len(complete))
+        if len(complete) < minimum_rows:
+            raise ValueError(
+                f"Model {model_name} has only {len(complete)} complete audited rows "
+                f"in usable training start year {training_start}; required={minimum_rows}"
+            )
+
     return {
         "analysis_panel": str(analysis_path),
         "training_panel": str(training_path),
-        "training_start_year": start_year,
+        "source_start_year": source_start,
+        "source_start_role": "lag_support_only",
+        "source_start_audited_rows": int(len(source_rows)),
+        "training_start_year": training_start,
         "training_start_audited_rows": int(len(start_rows)),
+        "training_start_complete_rows_by_model": complete_counts,
+        "model_test_start_year": test_start,
+        "direct_comparison_start_year": source_start + lag_support_years,
         "supplemental": _audit_supplemental_inputs(
             config_path,
             config,
@@ -175,6 +232,7 @@ def _audit_inputs(
 def _audit_outputs(
     output_dir: Path,
     *,
+    settings: dict,
     require_supplemental: bool,
 ) -> dict[str, object]:
     required_files = {
@@ -205,8 +263,38 @@ def _audit_outputs(
         raise ValueError("Architecture mean-centred predictors")
     if _strict_bool(estimated["current_outcome_clipped"], "current_outcome_clipped").any():
         raise ValueError("Current test outcomes were clipped")
-    if int(estimated.train_min_year.min()) > 2015:
-        raise ValueError("Historical estimation omitted the configured start year")
+
+    expected_training_start = int(settings["training_start_year"])
+    expected_model_test_start = int(settings["test_start_year"])
+    pooled = estimated.loc[estimated.architecture.eq("pooled")].copy()
+    if pooled.empty:
+        raise ValueError("No pooled architecture rows were estimated")
+    model_years = (
+        pooled.groupby("model", observed=True)
+        .agg(
+            first_test_year=("test_year", "min"),
+            earliest_training_year=("train_min_year", "min"),
+        )
+        .reset_index()
+    )
+    bad_test = model_years.loc[
+        model_years.first_test_year.ne(expected_model_test_start)
+    ]
+    if not bad_test.empty:
+        raise ValueError(
+            "Model-based outputs do not begin in the configured first test year: "
+            f"expected={expected_model_test_start}; observed="
+            f"{bad_test.to_dict(orient='records')}"
+        )
+    bad_training = model_years.loc[
+        model_years.earliest_training_year.ne(expected_training_start)
+    ]
+    if not bad_training.empty:
+        raise ValueError(
+            "Historical estimation omitted the configured usable training start year: "
+            f"expected={expected_training_start}; observed="
+            f"{bad_training.to_dict(orient='records')}"
+        )
 
     attribution = pd.read_csv(output_dir / "rq1_attribution_cases.csv")
     if attribution.empty:
@@ -236,6 +324,13 @@ def _audit_outputs(
     ]
     if direct[direct_required].isna().any().any():
         raise ValueError("Direct switching output contains incomplete cases")
+    expected_direct_start = int(settings["source_start_year"]) + 1
+    observed_direct_start = int(pd.to_numeric(direct.fiscal_year).min())
+    if observed_direct_start != expected_direct_start:
+        raise ValueError(
+            "Direct reporting-state comparisons should retain the first lag-usable "
+            f"year: expected={expected_direct_start}, observed={observed_direct_start}"
+        )
     summary = pd.read_csv(output_dir / "rq2_switch_summary.csv")
     direct_summary = summary.loc[summary.model.eq("direct")]
     if not direct_summary.denominator.eq(len(direct)).all():
@@ -263,6 +358,10 @@ def _audit_outputs(
         "output_dir": str(output_dir),
         "scope": "core_plus_supplemental" if require_supplemental else "core",
         "estimated_architectures": int(len(estimated)),
+        "model_year_contract": model_years.to_dict(orient="records"),
+        "model_test_start_year": expected_model_test_start,
+        "usable_training_start_year": expected_training_start,
+        "direct_comparison_start_year": observed_direct_start,
         "attribution_rows": int(len(attribution)),
         "direct_switching_rows": int(len(direct)),
         "unique_applied_tests": int(len(unique)),
@@ -293,6 +392,7 @@ def run_audit(
         ),
         "outputs": _audit_outputs(
             output_dir,
+            settings=config["settings"],
             require_supplemental=require_supplemental,
         ) if check_outputs else {"status": "SKIPPED"},
     }
