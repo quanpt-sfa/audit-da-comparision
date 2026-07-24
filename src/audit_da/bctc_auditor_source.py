@@ -31,10 +31,11 @@ OPTIONAL_ENTITY_COLUMNS = (
 
 # The raw BCTC source historically reused VSM and VTS for two distinct legal
 # entities. Canonicalisation must therefore use the entity name, not a global
-# ticker replacement.
-ENTITY_TICKER_OVERRIDES = {
-    ("VSM", "chung_khoan_vsm"): "VSMS",
-    ("VTS", "chung_khoan_viet_thanh"): "VTSC",
+# ticker replacement. Phrase matching also covers full legal names such as
+# "Công ty Cổ phần Chứng khoán VSM".
+ENTITY_TICKER_PATTERNS = {
+    "VSM": ("chung_khoan_vsm", "VSMS"),
+    "VTS": ("chung_khoan_viet_thanh", "VTSC"),
 }
 
 
@@ -51,9 +52,12 @@ def canonicalize_entity_ticker(ticker: Any, firm_name: Any = None) -> str:
     """Resolve known same-symbol entity collisions using the legal entity name."""
     normalized_ticker = normalize_ticker(ticker)
     normalized_name = _token(firm_name)
-    return ENTITY_TICKER_OVERRIDES.get(
-        (normalized_ticker, normalized_name), normalized_ticker
-    )
+    rule = ENTITY_TICKER_PATTERNS.get(normalized_ticker)
+    if rule is not None:
+        phrase, replacement = rule
+        if phrase in normalized_name:
+            return replacement
+    return normalized_ticker
 
 
 def is_bctc_audit_annual_long(path: Path) -> bool:
