@@ -1,6 +1,12 @@
 paths:
+  # Legacy runner path retained for backward comparison only.
   panel_input: data/processed/accrual_panel.csv.gz
   output_dir: artifacts/manuscript_results
+
+  # Final runner separates locked test cases from unrestricted history.
+  analysis_panel_input: data/processed/accrual_panel.csv.gz
+  training_panel_input: data/processed/accrual_panel_unrestricted.csv.gz
+  final_output_dir: artifacts/manuscript_results_final
 
 columns:
   industry: icb_l1
@@ -17,6 +23,7 @@ panel_contract:
     - big4_flag
     - audit_opinion_group
 
+# Retained for scripts 32/33 and historical comparison.
 method_contract:
   version: results-method-contract-v1
   jones_ordinary_intercept: false
@@ -28,6 +35,30 @@ method_contract:
     - cfo
     - benchmark_residual
   signed_shift_reassignment_cell: fiscal_year
+
+# Authoritative contract for scripts 34/35.
+final_method_contract:
+  version: final-results-contract-v2
+  analysis_population: locked_nonfinancial_panel
+  training_population: unrestricted_nonfinancial_history
+  require_training_start_year: true
+  jones_ordinary_intercept: false
+  jones_feature_centering: false
+  jones_scale_regressor: inv_assets
+  current_test_outcome_clipping: false
+  attribution_estimand: two_player_pat_cfo_fixed_reference
+  attribution_players:
+    - pat
+    - cfo
+  attribution_benchmarks:
+    - audited_reference
+    - pre_reference
+  direct_switching_population: common_complete_case
+  signed_shift_reassignment_cell: fiscal_year
+  applied_primary_test: paired_difference
+  stacked_state_slopes: fully_interacted
+  signed_da_difference_family: one_unique_test_per_focal
+  supplemental_inputs: required
 
 settings:
   audited_label: audited
@@ -51,6 +82,12 @@ settings:
   simulation_batch_size: 32
   blas_threads_per_worker: 1
 
+# Final runner fails closed when either file is absent or empty.
+required_supplemental_paths:
+  concentration_input: artifacts/cfs_shifting_validation/concentration_cases.csv
+  near_zero_input: artifacts/cfs_shifting_validation/near_zero_randomisation.csv
+
+# Legacy optional paths retained for scripts/31_complete_manuscript_results.py.
 optional_paths:
   concentration_input: artifacts/cfs_shifting_validation/concentration_cases.csv
   near_zero_input: artifacts/cfs_shifting_validation/near_zero_randomisation.csv
