@@ -1,12 +1,13 @@
 # Manuscript Results completion workflow
 
-The Chapter 4 workflow has three mandatory layers:
+The Chapter 4 workflow has four mandatory layers:
 
 1. rebuild and enrich the unrestricted paired panel;
 2. reapply the previously locked issuer-year population;
-3. select the nonfinancial Chapter 4 analysis sample.
+3. select the nonfinancial Chapter 4 analysis sample;
+4. pass the locked Jones, Shapley, and randomisation method contract.
 
-This separation prevents metadata enrichment from silently changing the population contract. The unrestricted panel is retained for auditability, while the locked panel preserves the exact issuer-year keys established by the earlier population-lock stage.
+This separation prevents metadata enrichment or implementation drift from silently changing the population or estimand contracts.
 
 ## Required inputs
 
@@ -35,7 +36,7 @@ python .\scripts\01_build_panel.py `
   --config .\config\signal_gate.yaml
 ```
 
-The script writes two files:
+The script writes:
 
 ```text
 data/processed/accrual_panel_unrestricted.csv.gz
@@ -58,47 +59,62 @@ exclusion_reason
 
 Financial firms remain observable in the unrestricted panel. The population lock and the Chapter 4 runner record any financial and unknown-industry exclusions explicitly.
 
+## Locked method contract
+
+The Chapter 4 completion run uses:
+
+- no ordinary intercept in Jones-family normal-accrual regressions;
+- predictor scaling without mean centring;
+- `inv_assets` as the scale regressor;
+- exact three-player PAT--CFO--benchmark-residual Shapley attribution;
+- signed-shift reassignment within fiscal year.
+
+The full rationale and invariants are documented in `docs/method_contract_corrections.md`.
+
+Run the audit independently:
+
+```powershell
+python .\scripts\32_audit_method_contract.py `
+  --config .\config\results_completion.yaml `
+  --skip-existing-outputs
+```
+
 ## Parallel configuration
 
-The heavy bootstrap and simulation stages are vectorized and distributed with `ProcessPoolExecutor`. The default configuration is tuned for a Windows workstation with 32 physical cores and 63 logical threads:
+The heavy bootstrap and simulation stages use `ProcessPoolExecutor`. The default configuration is tuned for a Windows workstation with 32 physical cores and 63 logical threads:
 
 - `parallel_workers: 31`
 - `simulation_batch_size: 32`
 - `blas_threads_per_worker: 1`
 
-Limiting BLAS to one thread per process prevents each worker from spawning its own large OpenMP pool.
+Limiting BLAS to one thread per process prevents each worker from spawning its own OpenMP pool.
 
-## Full Chapter 4 run
+## Clean corrected Chapter 4 run
 
-Delete legacy outputs because they predate the corrected panel and sample contracts:
-
-```powershell
-Remove-Item .\artifacts\manuscript_results -Recurse -Force -ErrorAction SilentlyContinue
-New-Item -ItemType Directory -Force .\artifacts | Out-Null
-```
-
-Then run:
+Do not invoke the legacy completion entrypoint directly for the final run. Use the guarded wrapper, which deletes legacy checkpoints, audits the method contract, runs the completion pipeline, and audits the generated bundle again:
 
 ```powershell
-python .\scripts\31_complete_manuscript_results.py `
+python .\scripts\33_run_method_corrected_results.py `
   --config .\config\results_completion.yaml `
+  --clean `
   --workers 31 `
   --simulation-batch-size 32
 ```
 
-The runner writes `analysis_sample_contract.json` before estimation. It records the locked-panel size, nonfinancial analysis size, exclusions, and a deterministic hash of the selected issuer-year-state keys.
+The underlying runner writes `analysis_sample_contract.json` before estimation. The method audit writes `method_contract_audit.json`. Together they record the selected issuer-year-state keys and the locked estimator, attribution, and randomisation definitions.
 
 ## Resume from compatible checkpoints
 
+Resume only through the guarded wrapper:
+
 ```powershell
-python .\scripts\31_complete_manuscript_results.py `
+python .\scripts\33_run_method_corrected_results.py `
   --config .\config\results_completion.yaml `
   --resume `
-  --workers 31
+  --workers 31 `
+  --simulation-batch-size 32
 ```
 
-Resume is permitted only when `analysis_sample_contract.json` exactly matches the current nonfinancial sample. Old checkpoints without this contract are rejected.
+Resume is refused when architecture checkpoints lack the no-intercept fields, attribution checkpoints lack the three-player efficiency fields, randomisation checkpoints lack the fiscal-year cell declaration, or the sample contract differs.
 
-The runner writes base checkpoints after architecture, attribution, and switching construction. It also writes separate heavy-stage checkpoints after profit-gate sensitivity, randomisation, time-shift simulation, and applied-consequence estimation. Progress messages report the number of process tasks and completed tasks. Time-shift is split by model, reference benchmark, and donor design, producing up to 36 independent process tasks.
-
-The runner rebuilds four model families, four historical architectures, three reference-state constructions, Shapley attribution, issuer-cluster inference, common post-audit CDF switching outputs, randomisation benchmarks, ICB Level-1 same-year peer donors, all 24 applied-consequence comparisons including Big Four, and the three confirmatory intersection-union families.
+The runner writes base checkpoints after architecture, attribution, and switching construction. It writes separate heavy-stage checkpoints after profit-gate sensitivity, randomisation, time-shift simulation, and applied-consequence estimation. Time-shift is split by model, reference benchmark, and donor design, producing up to 36 independent process tasks.
