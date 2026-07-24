@@ -5,6 +5,7 @@ from pathlib import Path
 import pandas as pd
 
 from audit_da.bctc_auditor_source import (
+    canonicalize_entity_ticker,
     is_bctc_audit_annual_long,
     load_bctc_audit_annual_long,
 )
@@ -67,6 +68,46 @@ def test_verified_bctc_metadata_contract(tmp_path: Path) -> None:
     assert status.loc[0, "source_rows"] == 4
     assert status.loc[0, "audit_firm_rows"] == 2
     assert status.loc[0, "audit_firm_value_mismatches"] == 0
+
+
+def test_known_reused_symbols_use_legal_entity_name() -> None:
+    assert canonicalize_entity_ticker("VSM", "Container Miền Trung") == "VSM"
+    assert canonicalize_entity_ticker("VSM", "Chứng khoán VSM") == "VSMS"
+    assert canonicalize_entity_ticker("VTS", "Gạch Ngói Từ Sơn") == "VTS"
+    assert canonicalize_entity_ticker("VTS", "Chứng Khoán Việt Thành") == "VTSC"
+
+
+def test_reused_symbol_entities_do_not_collapse(tmp_path: Path) -> None:
+    source = tmp_path / "bctc_audit_annual_long.csv"
+    rows = [
+        [
+            "VSM", "VSM", "Container Miền Trung", "HNX", 2016, "annual", "Hợp nhất",
+            "audited", "audit_firm", "Kiểm Toán Và Tư Vấn Tâm An",
+            None, "Kiểm Toán Và Tư Vấn Tâm An", "vsm_container.xlsx", 1, "header",
+        ],
+        [
+            "VSM", "VSM", "Chứng khoán VSM", "OTC", 2016, "annual", "Hợp nhất",
+            "audited", "audit_firm", "Aasc., Ltd",
+            None, "Aasc., Ltd", "vsm_securities.xlsx", 1, "header",
+        ],
+        [
+            "VTS", "VTS", "Gạch Ngói Từ Sơn", "UPCOM", 2016, "annual", "Hợp nhất",
+            "audited", "audit_firm", "Aasc., Ltd",
+            None, "Aasc., Ltd", "vts_tile.xlsx", 1, "header",
+        ],
+        [
+            "VTS", "VTS", "Chứng Khoán Việt Thành", "OTC", 2016, "annual", "Hợp nhất",
+            "audited", "audit_firm", "Kiểm Toán Và Tư Vấn A & C",
+            None, "Kiểm Toán Và Tư Vấn A & C", "vts_securities.xlsx", 1, "header",
+        ],
+    ]
+    pd.DataFrame(rows, columns=SOURCE_COLUMNS).to_csv(source, index=False)
+
+    firm_year, _, status = load_bctc_audit_annual_long(source)
+
+    assert set(firm_year["issuer_ticker"]) == {"VSM", "VSMS", "VTS", "VTSC"}
+    assert status.loc[0, "firm_years"] == 4
+    assert status.loc[0, "ambiguous_firm_years"] == 0
 
 
 def test_multiple_auditors_for_one_firm_year_remain_ambiguous(tmp_path: Path) -> None:
