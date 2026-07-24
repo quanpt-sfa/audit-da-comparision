@@ -112,6 +112,14 @@ def main() -> None:
         "--overwrite", action="store_true",
         help="Delete final_output_dir before running.",
     )
+    parser.add_argument(
+        "--include-supplemental",
+        action="store_true",
+        help=(
+            "Run line-item concentration and near-zero-CFO supplemental diagnostics. "
+            "Core Results do not require raw CFS data or supplemental inputs."
+        ),
+    )
     args = parser.parse_args()
 
     config_path = Path(args.config).resolve()
@@ -164,11 +172,13 @@ def main() -> None:
         json.dumps({
             "contract": contract,
             "sha256": final_contract_sha256(contract),
+            "run_scope": (
+                "core_plus_supplemental" if args.include_supplemental else "core"
+            ),
         }, indent=2),
         encoding="utf-8",
     )
 
-    concentration, near_zero = _load_required_supplemental(config_path, config)
     industry = config.get("columns", {}).get("industry", "icb_l1")
 
     stage("estimating final accrual architectures")
@@ -221,12 +231,16 @@ def main() -> None:
     tables["applied_consequence_unique_tests"] = applied_unique
     tables["applied_consequence_manifest"] = applied_manifest
 
-    stage("running required supplemental diagnostics")
-    tables["supplemental_inference"] = supplemental_inference(
-        concentration, near_zero, settings
-    )
-    if tables["supplemental_inference"].empty:
-        raise ValueError("Required supplemental inputs produced no diagnostic rows")
+    if args.include_supplemental:
+        stage("running requested supplemental diagnostics")
+        concentration, near_zero = _load_required_supplemental(config_path, config)
+        tables["supplemental_inference"] = supplemental_inference(
+            concentration, near_zero, settings
+        )
+        if tables["supplemental_inference"].empty:
+            raise ValueError("Required supplemental inputs produced no diagnostic rows")
+    else:
+        stage("skipping supplemental diagnostics; core scope requested")
 
     tables["confirmatory_family_summary"] = confirmatory_summary(
         tables["rq1_attribution_matrix"],
@@ -246,6 +260,7 @@ def main() -> None:
         "analysis_panel_input": str(analysis_path),
         "training_panel_input": str(training_path),
         "final_contract_sha256": final_contract_sha256(contract),
+        "run_scope": "core_plus_supplemental" if args.include_supplemental else "core",
         "seed": settings.seed,
         "bootstrap_draws": settings.bootstrap_draws,
         "simulation_draws": settings.simulation_draws,
