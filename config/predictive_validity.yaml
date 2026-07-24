@@ -1,0 +1,48 @@
+paths:
+  panel_input: data/processed/accrual_panel.csv.gz
+  output_dir: artifacts/predictive_validity
+
+sample:
+  exclude_financial_firms: true
+  unknown_industry_policy: exclude
+
+runtime:
+  # Four OOS test families plus one accrual-quality bootstrap job.
+  # Values above 5 do not add useful process-level parallelism.
+  workers: 5
+  # Resample issuer-cluster aggregates in vectorized batches inside each worker.
+  bootstrap_batch_size: 128
+
+settings:
+  audited_label: audited
+  unaudited_label: unaudited
+
+  # Source data begin in 2015. Predictor year 2016 is the first year with
+  # audited beginning-assets support; outcomes extend through audited 2025.
+  predictor_start_year: 2016
+  predictor_end_year: 2024
+
+  # Expanding-window out-of-sample evaluation uses at least 2016--2017 for
+  # training before the first test fold in 2018.
+  oos_test_start_year: 2018
+  oos_test_end_year: 2024
+  minimum_train_rows: 250
+  minimum_train_years: 2
+
+  pooled_specifications:
+    - canonical
+    - year_industry_fe
+  industry_column: icb_l1
+
+  # Historical fitting variables are winsorised. Current test outcomes remain
+  # raw; current predictors are bounded only to historical support.
+  winsor_lower: 0.01
+  winsor_upper: 0.99
+
+  bootstrap_draws: 2000
+  seed: 20260724
+
+  # Dechow--Dichev-style robustness requires audited CFO at t-1 and t+1.
+  aq_start_year: 2017
+  aq_end_year: 2024
+  aq_minimum_train_rows: 250

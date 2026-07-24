@@ -68,6 +68,10 @@ def run_ols_baselines(panel: pd.DataFrame, config: dict[str, Any]) -> pd.DataFra
 
         for model_name, features in specs.items():
             features = list(features)
+            if "inv_assets" not in features:
+                raise ValueError(
+                    f"Jones-family specification {model_name} omits inv_assets"
+                )
             needed = ["ta_scaled"] + features
             training = train.replace([np.inf, -np.inf], np.nan).dropna(
                 subset=needed
@@ -94,8 +98,10 @@ def run_ols_baselines(panel: pd.DataFrame, config: dict[str, Any]) -> pd.DataFra
             ):
                 continue
 
-            scaler = StandardScaler().fit(training[features])
-            model = LinearRegression().fit(
+            # Locked Jones contract: inv_assets is a regressor and there is no
+            # additional ordinary intercept. Predictors are scaled but not centred.
+            scaler = StandardScaler(with_mean=False).fit(training[features])
+            model = LinearRegression(fit_intercept=False).fit(
                 scaler.transform(training[features]),
                 training["ta_scaled"],
             )
@@ -110,6 +116,9 @@ def run_ols_baselines(panel: pd.DataFrame, config: dict[str, Any]) -> pd.DataFra
                 "test_start_year_contract": window.test_start_year,
                 "test_end_year_contract": window.test_end_year,
                 "train_rows": len(training),
+                "ordinary_intercept": False,
+                "feature_centering": False,
+                "scale_regressor": "inv_assets",
             }
 
             for benchmark in signal["benchmarks"]:

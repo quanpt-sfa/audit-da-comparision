@@ -32,8 +32,13 @@ BENCHMARKS = ("audited_reference", "pre_reference", "version_specific")
 class CompletionSettings:
     audited_label: str = "audited"
     unaudited_label: str = "unaudited"
-    training_start_year: int = 2015
-    test_start_year: int = 2016
+    # The first source year supplies lagged inputs only. With source data beginning
+    # in 2015, 2016 is the first model-complete estimation year and 2017 is the
+    # first model-based test year. Direct reporting-state comparisons can still
+    # use 2016 because their beginning-assets lag is available from 2015.
+    source_start_year: int = 2015
+    training_start_year: int = 2016
+    test_start_year: int = 2017
     test_end_year: int = 2025
     min_train_rows: int = 100
     min_industry_rows: int = 40
