@@ -91,10 +91,27 @@ def _adjust_pvalues(pvalues: Sequence[float], method: str) -> np.ndarray:
     return adjusted
 
 def output_hash(frame: pd.DataFrame) -> str:
-    sort_cols = [c for c in KEYS if c in frame]
-    if not sort_cols:
-        sort_cols = sorted(frame.columns.tolist())
-    ordered = frame.sort_values(sort_cols, kind='mergesort', na_position='last').reset_index(drop=True) if sort_cols else frame.reset_index(drop=True)
+    """Return a row-order-invariant SHA-256 hash for a result table.
+
+    Result tables may contain mixed-type reporting labels, for example integer
+    fiscal years together with the string ``"pooled"``.  Pandas cannot order
+    those values directly.  Build a string-only canonical sort frame across all
+    columns, use it only to determine row order, and hash the original values.
+    """
+    if frame.empty and len(frame.columns) == 0:
+        ordered = frame.reset_index(drop=True)
+    else:
+        canonical = (
+            frame.reindex(columns=sorted(frame.columns))
+            .astype('string')
+            .fillna('<NA>')
+        )
+        order = canonical.sort_values(
+            canonical.columns.tolist(),
+            kind='mergesort',
+            na_position='last',
+        ).index
+        ordered = frame.loc[order].reset_index(drop=True)
     payload = ordered.to_csv(index=False, float_format='%.17g').encode('utf-8')
     return hashlib.sha256(payload).hexdigest()
 
