@@ -1,6 +1,8 @@
 paths:
   input: data/raw/financial_statement_full_long.csv.gz
+  unrestricted_panel: data/processed/accrual_panel_unrestricted.csv.gz
   processed_panel: data/processed/accrual_panel.csv.gz
+  population_eligible_keys: artifacts/population_lock/population_eligible_keys.csv
   industry_input: data/raw/bctc_industry_icb.csv
   audit_metadata_input: data/raw/bctc_audit_annual_long.csv
   posterior_output: artifacts/paired_da_posterior.csv.gz
